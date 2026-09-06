@@ -1,0 +1,39 @@
+---
+description: MCP-first workflow, git commits, no silent decisions
+alwaysApply: true
+---
+
+# Workflow
+
+## MCP вместо шелла и прямых правок
+
+Код, тесты, сборка, NuGet, поиск по solution — только MCP `user-rsolyn_mcp`.
+
+- читать/писать файлы: `get_file_content`, `read_file_range`, `update_file_content`, `apply_patch`
+- C# правки: Roslyn-инструменты (`add_method_to_class`, `update_method_body`, `rename_symbol`, …), не сырой текст, если есть AST-операция
+- сборка/тесты/run: `run_dotnet_build`, `run_dotnet_test`, `run_specific_test`, `run_dotnet_run`
+- пакеты: `search_nuget_registry` → `add_package_reference`
+- перед семантическими правками: `load_workspace`
+
+Запрещено по умолчанию: Shell для `dotnet`, и встроенные Write/StrReplace/EditNotebook/Grep/Glob, если ту же работу делает rsolyn.
+
+Исключения (шелл допустим):
+- `git` (init/status/diff/log/add/commit) — в rsolyn нет commit, только `get_changed_files`
+- операция, которой нет в MCP; в ответе явно написать, чего не хватило
+
+Не вызывать `stop_mcp_server` без просьбы.
+
+## Коммит после успеха
+
+Локальный git уже есть. После успешного законченного изменения (сборка/тесты зелёные, если трогали код):
+
+1. `get_changed_files` + `git status` / `git diff` / `git log -5`
+2. закоммитить только относящееся; секреты (`.env`, ключи) не класть
+3. сообщение — 1–2 предложения, зачем, не что
+4. не `push`, не `--amend` чужого/уже запушенного, не менять git config, не `--no-verify`
+
+Пустой коммит не создавать. Docs-only — тоже коммитить, тесты не обязательны.
+
+## Спрашивать, не выбирать молча
+
+Спор стека, скоупа эпохи, формата словаря, нового пакета/провайдера, развилка «сделать лучше» — остановиться и спросить. Не расширять эпоху «заодно». Сначала правка `docs/`, потом код.

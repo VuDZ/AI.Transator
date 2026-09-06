@@ -1,0 +1,19 @@
+---
+description: Docs-first architecture and epoch boundaries
+alwaysApply: true
+---
+
+# Архитектурный надзор
+
+Контракт: `docs/README.md`, `docs/architecture.md`, `docs/stack.md`, `docs/glossary-format.md`.
+Реализация — строго текущая эпоха из `docs/epochs/`. Backlog не тащить в v1.
+
+- три проекта: Cli, Core, Tests. Четвёртый не добавлять
+- пайплайн .NET 10; Python только `tools/glossary-ingest` из backlog
+- EPUB in/out, target `ru`, словарь только Markdown
+- префикс перевода стабилен на книгу; словарь не резать на чанк
+- PDF на входе — отказ, не парсер
+- `IHttpClientFactory`, `IOptions<T>`, без keyed DI, без `new HttpClient`
+- провайдеры: `openai` / `openrouter` / `provod` через `ILlmProviderResolver`
+
+Проверка диффа: не расходится ли с epoch-файлом и форматом словаря. Расходится — спросить или сначала поправить docs.
