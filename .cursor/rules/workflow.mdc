@@ -25,7 +25,9 @@ alwaysApply: true
 
 ## Коммит после успеха
 
-В `master` коммитит только этот агент. После успешного изменения сразу `git add` нужных файлов и `git commit`. Сообщение — одна строка, зачем.
+В `master` коммитит только этот агент. После успешного изменения сразу `git add` нужных файлов и `git commit`.
+Сообщение: Conventional Commits, English, one line (`docs:` / `feat:` / `fix:` / `chore:` / `refactor:` / `test:`).
+Code comments: English only. `docs/` may stay Russian.
 
 Не тратить токены: не тянуть `git status` / `git diff` / `git log`, не запрашивать `get_changed_files`, не печатать дамп диффа в ответ. Если коммит упал — тогда смотреть ошибку.
 
