@@ -1,4 +1,4 @@
-using Ai.Translator.Core;
+﻿using Ai.Translator.Core;
 
 namespace Ai.Translator.Tests;
 
@@ -19,5 +19,22 @@ public sealed class InputPathGuardTests
     public void IsPdf_AllowsNonPdfPaths(string path)
     {
         Assert.False(InputPathGuard.IsPdf(path));
+    }
+
+    [Theory]
+    [InlineData("book.epub")]
+    [InlineData("book.EPUB")]
+    [InlineData(@"C:\library\chapter.Epub")]
+    public void IsEpub_AcceptsEpubExtension(string path)
+    {
+        Assert.True(InputPathGuard.IsEpub(path));
+    }
+
+    [Theory]
+    [InlineData("book.pdf")]
+    [InlineData("glossary.md")]
+    public void IsEpub_RejectsNonEpubPaths(string path)
+    {
+        Assert.False(InputPathGuard.IsEpub(path));
     }
 }

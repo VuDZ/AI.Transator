@@ -1,4 +1,4 @@
-namespace Ai.Translator.Core;
+﻿namespace Ai.Translator.Core;
 
 public static class InputPathGuard
 {
@@ -9,5 +9,11 @@ public static class InputPathGuard
     {
         ArgumentNullException.ThrowIfNull(path);
         return string.Equals(Path.GetExtension(path), ".pdf", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsEpub(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        return string.Equals(Path.GetExtension(path), ".epub", StringComparison.OrdinalIgnoreCase);
     }
 }

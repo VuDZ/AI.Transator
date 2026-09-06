@@ -1,4 +1,7 @@
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
+using Ai.Translator.Core.Abstractions;
+using Ai.Translator.Core.Epub;
+using Ai.Translator.Core.Glossary;
 using Ai.Translator.Core.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,6 +38,12 @@ public static class ServiceCollectionExtensions
                     new AuthenticationHeaderValue("Bearer", llm.ApiKey);
             }
         });
+
+        services.AddSingleton<IGlossaryParser, GlossaryParser>();
+        services.AddSingleton<IGlossaryWriter, GlossaryWriter>();
+        services.AddSingleton<IGlossaryCompiler, GlossaryCompiler>();
+        services.AddSingleton<IBookTextExtractor, EpubBookTextExtractor>();
+        services.AddSingleton<IGlossaryCompileService, GlossaryCompileService>();
 
         return services;
     }

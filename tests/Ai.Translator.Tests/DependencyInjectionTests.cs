@@ -1,5 +1,6 @@
-using System.Text;
+﻿using System.Text;
 using Ai.Translator.Core;
+using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,5 +59,11 @@ public sealed class DependencyInjectionTests
         var factory = provider.GetRequiredService<IHttpClientFactory>();
         using var client = factory.CreateClient(ServiceCollectionExtensions.LlmHttpClientName);
         Assert.Equal(new Uri("http://localhost:11434/v1/"), client.BaseAddress);
+
+        Assert.NotNull(provider.GetRequiredService<IGlossaryParser>());
+        Assert.NotNull(provider.GetRequiredService<IGlossaryWriter>());
+        Assert.NotNull(provider.GetRequiredService<IGlossaryCompiler>());
+        Assert.NotNull(provider.GetRequiredService<IBookTextExtractor>());
+        Assert.NotNull(provider.GetRequiredService<IGlossaryCompileService>());
     }
 }

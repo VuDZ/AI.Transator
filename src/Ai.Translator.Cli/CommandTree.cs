@@ -1,5 +1,8 @@
 ﻿using System.CommandLine;
 using Ai.Translator.Core;
+using Ai.Translator.Core.Abstractions;
+using Ai.Translator.Core.Glossary;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Ai.Translator.Cli;
 
@@ -48,7 +51,7 @@ internal static class CommandTree
             outOption
         };
 
-        compile.SetAction(parseResult =>
+        compile.SetAction(async (parseResult, cancellationToken) =>
         {
             ArgumentNullException.ThrowIfNull(services);
 
@@ -59,8 +62,25 @@ internal static class CommandTree
                 return 1;
             }
 
-            parseResult.InvocationConfiguration.Error.WriteLine("Not implemented.");
-            return 1;
+            var corpus = parseResult.GetValue(corpusOption);
+            var output = parseResult.GetValue(outOption);
+            if (corpus is null || book is null || output is null)
+            {
+                parseResult.InvocationConfiguration.Error.WriteLine("Missing required argument.");
+                return 1;
+            }
+
+            try
+            {
+                var compileService = services.GetRequiredService<IGlossaryCompileService>();
+                await compileService.CompileAsync(corpus, book, output, cancellationToken);
+                return 0;
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or GlossaryFormatException or InvalidOperationException)
+            {
+                parseResult.InvocationConfiguration.Error.WriteLine(ex.Message);
+                return 1;
+            }
         });
 
         return compile;
