@@ -1,4 +1,4 @@
-namespace Ai.Translator.Core.Options;
+﻿namespace Ai.Translator.Core.Options;
 
 public sealed class LlmOptions
 {
@@ -13,6 +13,8 @@ public sealed class LlmOptions
     public int ContextWindowTokens { get; set; }
 
     public int ReservedOutputTokens { get; set; }
+
+    public int TimeoutSeconds { get; set; } = 300;
 
     public string CacheMode { get; set; } = "none";
 }

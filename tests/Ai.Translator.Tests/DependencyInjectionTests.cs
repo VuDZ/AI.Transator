@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using Ai.Translator.Core;
 using Ai.Translator.Core.Abstractions;
+using Ai.Translator.Core.Llm;
 using Ai.Translator.Core.Options;
 using Ai.Translator.Core.Translation;
 using Microsoft.Extensions.Configuration;
@@ -28,6 +29,7 @@ public sealed class DependencyInjectionTests
                 "ApiKey": "test-key",
                 "ContextWindowTokens": 8192,
                 "ReservedOutputTokens": 512,
+                "TimeoutSeconds": 180,
                 "CacheMode": "none"
               }
             }
@@ -56,10 +58,14 @@ public sealed class DependencyInjectionTests
         Assert.Equal("http://localhost:11434/v1", llm.BaseUrl);
         Assert.Equal("test-model", llm.Model);
         Assert.Equal("test-key", llm.ApiKey);
+        Assert.Equal(180, llm.TimeoutSeconds);
 
         var factory = provider.GetRequiredService<IHttpClientFactory>();
         using var client = factory.CreateClient(ServiceCollectionExtensions.LlmHttpClientName);
         Assert.Equal(new Uri("http://localhost:11434/v1/"), client.BaseAddress);
+        Assert.Equal(TimeSpan.FromSeconds(180), client.Timeout);
+        Assert.Equal("Bearer", client.DefaultRequestHeaders.Authorization?.Scheme);
+        Assert.Equal("test-key", client.DefaultRequestHeaders.Authorization?.Parameter);
 
         Assert.NotNull(provider.GetRequiredService<IGlossaryParser>());
         Assert.NotNull(provider.GetRequiredService<IGlossaryWriter>());
@@ -72,8 +78,43 @@ public sealed class DependencyInjectionTests
         Assert.NotNull(provider.GetRequiredService<IChapterChunker>());
         Assert.NotNull(provider.GetRequiredService<ITranslationValidator>());
         Assert.NotNull(provider.GetRequiredService<ICheckpointStore>());
-        Assert.NotNull(provider.GetRequiredService<ILlmProvider>());
+        Assert.IsType<ChatCompletionsLlmProvider>(provider.GetRequiredService<ILlmProvider>());
         Assert.NotNull(provider.GetRequiredService<IBookTranslationService>());
         Assert.NotNull(provider.GetRequiredService<TimeProvider>());
+    }
+
+    [Fact]
+    public void AddTranslator_DifferentBaseUrl_ChangesHttpClientAddressNotPipeline()
+    {
+        const string json =
+            """
+            {
+              "Llm": {
+                "BaseUrl": "https://openrouter.ai/api/v1",
+                "Model": "other-model",
+                "ApiKey": "other-key"
+              }
+            }
+            """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        var configuration = new ConfigurationBuilder()
+            .AddJsonStream(stream)
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddTranslator(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        var llm = provider.GetRequiredService<IOptions<LlmOptions>>().Value;
+        Assert.Equal("https://openrouter.ai/api/v1", llm.BaseUrl);
+        Assert.Equal(300, llm.TimeoutSeconds);
+
+        using var client = provider.GetRequiredService<IHttpClientFactory>()
+            .CreateClient(ServiceCollectionExtensions.LlmHttpClientName);
+        Assert.Equal(new Uri("https://openrouter.ai/api/v1/"), client.BaseAddress);
+        Assert.Equal(TimeSpan.FromSeconds(300), client.Timeout);
+        Assert.IsType<ChatCompletionsLlmProvider>(provider.GetRequiredService<ILlmProvider>());
+        Assert.IsType<BookTranslationService>(provider.GetRequiredService<IBookTranslationService>());
     }
 }

@@ -3,6 +3,7 @@ using Ai.Translator.Core;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 using Ai.Translator.Core.Glossary;
+using Ai.Translator.Core.Llm;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Ai.Translator.Cli;
@@ -203,7 +204,7 @@ internal static class CommandTree
                     cancellationToken);
                 return result.HasFailures ? 1 : 0;
             }
-            catch (Exception ex) when (ex is FileNotFoundException or GlossaryFormatException or InvalidOperationException)
+            catch (Exception ex) when (ex is FileNotFoundException or GlossaryFormatException or InvalidOperationException or LlmException)
             {
                 parseResult.InvocationConfiguration.Error.WriteLine(ex.Message);
                 return 1;

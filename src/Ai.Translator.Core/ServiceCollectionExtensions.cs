@@ -34,6 +34,11 @@ public static class ServiceCollectionExtensions
                 client.BaseAddress = new Uri(baseUrl, UriKind.Absolute);
             }
 
+            if (llm.TimeoutSeconds > 0)
+            {
+                client.Timeout = TimeSpan.FromSeconds(llm.TimeoutSeconds);
+            }
+
             if (!string.IsNullOrWhiteSpace(llm.ApiKey))
             {
                 client.DefaultRequestHeaders.Authorization =
@@ -53,7 +58,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IChapterChunker, ChapterChunker>();
         services.AddSingleton<ITranslationValidator, TranslationValidator>();
         services.AddSingleton<ICheckpointStore, FileCheckpointStore>();
-        services.AddSingleton<ILlmProvider, UnconfiguredLlmProvider>();
+        services.AddSingleton<ILlmProvider, ChatCompletionsLlmProvider>();
         services.AddSingleton<IBookTranslationService, BookTranslationService>();
 
         return services;
