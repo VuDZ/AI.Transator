@@ -1,11 +1,6 @@
 # Правки после эпохи 01
 
-Статус: **пункт 1 закрыт** (проверено). Пункт 2 — в эпохе 02.
+Статус: **закрыто** (оба пункта проверены).
 
-## Закрыто
-
-1. Парсер читает рабочий MD без `##` (заголовок + преамбула), write→parse пустой. Compile корпуса без записей по-прежнему `GlossaryFormatException` в `GlossaryCompileService`.
-
-## До эпохи 02
-
-2. **Поглотить `IBookTextExtractor`.** Не заводить второй plain text. `IEpubBookService` переиспользует VersOne + `XhtmlToPlainText`.
+1. Парсер читает рабочий MD без `##`. Compile корпуса без записей — ошибка.
+2. `IBookTextExtractor` поглощён: compile идёт через `IEpubBookService`, plain text — `XhtmlToPlainText`.
