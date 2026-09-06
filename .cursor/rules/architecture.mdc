@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Архитектурный надзор
 
-Контракт: `docs/README.md`, `docs/architecture.md`, `docs/stack.md`, `docs/local-config.md`, `docs/glossary-format.md`.
+Контракт: `docs/README.md`, `docs/architecture.md`, `docs/stack.md`, `docs/local-config.md`, `docs/glossary-format.md`, `prompts/translate-system.md`.
 Реализация — строго текущая эпоха из `docs/epochs/`. Backlog не тащить в v1.
 
 - три проекта: Cli, Core, Tests. Четвёртый не добавлять

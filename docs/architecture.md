@@ -119,6 +119,14 @@ ai-translator translate --input <epub> --glossary <md> --out <epub>
 Единственный способ звать модель в v1: **нестриминговый Chat Completions**.
 `POST {BaseUrl}/chat/completions`, `stream: false`.
 System = `StablePrefix`, user = `VariableContent`.
+
+`StablePrefix` — три слоя в фиксированном порядке (кеш на всю книгу):
+
+1. Общие правила — [`prompts/translate-system.md`](../prompts/translate-system.md) (в git, без имён вселенных).
+2. Преамбула рабочего словаря — вселенная, издание, ты/вы.
+3. Записи рабочего словаря после compile.
+
+Слой 3 не резать под главу. WH40k и прочие вселенные — только в преамбуле корпуса, не в коде.
 Ответ целиком: `choices[0].message.content` + `finish_reason` + usage.
 
 Не делаем: Responses API, Anthropic Messages, legacy Completions, streaming, batch.

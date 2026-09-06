@@ -69,7 +69,7 @@ IBookTranslationService.RunAsync(TranslationJob, ct)
 ICheckpointStore.Load/Save
 ```
 
-`styleRules` живут в `TranslatorOptions` или встроенной константе Options. Не вшивать в чанкер.
+`styleRules` — текст [`prompts/translate-system.md`](../../prompts/translate-system.md), не вшивать WH40k. Factory: слой 1 (этот файл) + `IGlossaryWriter.Write(working)` (преамбула и записи). Не класть правила в чанкер. Пока в коде дубль живёт в `TranslatorOptions.StyleRules` — см. [fixes/03-translation.md](../fixes/03-translation.md).
 
 Work-dir:
 

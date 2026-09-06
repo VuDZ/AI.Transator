@@ -1,18 +1,13 @@
 # Правки после эпохи 03
 
-Статус: **не сдана**. В этом рабочем дереве пайплайна перевода нет.
+Статус: **принята с замечаниями**. 59 тестов зелёные. `translate` больше не заглушка: префикс + чанки + ретраи + `--chapters` + resume + полный EPUB, мок `ILlmProvider`. Живой HTTP — 04 (`UnconfiguredLlmProvider` в DI).
 
-## Блокер
+## До эпохи 04
 
-1. `translate` по-прежнему пишет `Not implemented.` и exit 1 (кроме PDF).
-2. Нет типов и папок эпохи 03: `ILlmProvider`, `LlmRequest` (`StablePrefix` / `VariableContent`), `ITranslationPromptFactory`, `IChapterChunker`, `ITranslationValidator`, `IBookTranslationService`, `ICheckpointStore`. Тестов на чанкер / валидатор / `--chapters` нет.
+1. **Два источника правил.** Канон слоя 1 — [`prompts/translate-system.md`](../../prompts/translate-system.md). Код берёт `TranslatorOptions.StyleRules` (короткий дефолт в C#). Нужен один источник: Cli копирует `prompts/translate-system.md` в output (как Local.json), factory/Host читает файл; Options — только fallback если файла нет. Не дублировать текст в двух местах.
 
-Без этого нечего принимать по [03-translation.md](../epochs/03-translation.md).
+## Не дефект 03
 
-## Что на диске есть (это 02, не 03)
-
-- `IEpubBookService` + `WriteCopyAsync`
-- `glossary compile` ходит в `IEpubBookService.OpenAsync`, `IBookTextExtractor` снят — пункт 2 из [01-glossary.md](01-glossary.md) выглядит закрытым
-- `EpubBookServiceTests` есть
-
-Эпоху 02 формально в этом чате не принимали. Если сдавали её — напиши, сверю отдельно. Если 03 лежит в другой ветке/копии — этого дерева она не касается.
+- `glossary extract` всё ещё заглушка (05).
+- Без мока `translate` упадёт на `UnconfiguredLlmProvider` — так задумано до 04.
+- HAP-rewrite XHTML — наблюдение из 02, не 03.
