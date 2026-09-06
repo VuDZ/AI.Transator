@@ -65,5 +65,13 @@ public sealed class DependencyInjectionTests
         Assert.NotNull(provider.GetRequiredService<IGlossaryCompiler>());
         Assert.NotNull(provider.GetRequiredService<IEpubBookService>());
         Assert.NotNull(provider.GetRequiredService<IGlossaryCompileService>());
+        Assert.NotNull(provider.GetRequiredService<ITokenEstimator>());
+        Assert.NotNull(provider.GetRequiredService<ITranslationPromptFactory>());
+        Assert.NotNull(provider.GetRequiredService<IChapterChunker>());
+        Assert.NotNull(provider.GetRequiredService<ITranslationValidator>());
+        Assert.NotNull(provider.GetRequiredService<ICheckpointStore>());
+        Assert.NotNull(provider.GetRequiredService<ILlmProvider>());
+        Assert.NotNull(provider.GetRequiredService<IBookTranslationService>());
+        Assert.NotNull(provider.GetRequiredService<TimeProvider>());
     }
 }

@@ -1,6 +1,7 @@
 ﻿using System.CommandLine;
 using Ai.Translator.Core;
 using Ai.Translator.Core.Abstractions;
+using Ai.Translator.Core.Domain;
 using Ai.Translator.Core.Glossary;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -166,7 +167,7 @@ internal static class CommandTree
             chaptersOption
         };
 
-        translate.SetAction(parseResult =>
+        translate.SetAction(async (parseResult, cancellationToken) =>
         {
             ArgumentNullException.ThrowIfNull(services);
 
@@ -177,8 +178,36 @@ internal static class CommandTree
                 return 1;
             }
 
-            parseResult.InvocationConfiguration.Error.WriteLine("Not implemented.");
-            return 1;
+            var glossary = parseResult.GetValue(glossaryOption);
+            var output = parseResult.GetValue(outOption);
+            if (input is null || glossary is null || output is null)
+            {
+                parseResult.InvocationConfiguration.Error.WriteLine("Missing required argument.");
+                return 1;
+            }
+
+            try
+            {
+                var translation = services.GetRequiredService<IBookTranslationService>();
+                var result = await translation.RunAsync(
+                    new TranslationJob
+                    {
+                        InputPath = input,
+                        GlossaryPath = glossary,
+                        OutputPath = output,
+                        Model = parseResult.GetValue(modelOption),
+                        WorkDir = parseResult.GetValue(workDirOption),
+                        Resume = parseResult.GetValue(resumeOption),
+                        Chapters = parseResult.GetValue(chaptersOption)
+                    },
+                    cancellationToken);
+                return result.HasFailures ? 1 : 0;
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or GlossaryFormatException or InvalidOperationException)
+            {
+                parseResult.InvocationConfiguration.Error.WriteLine(ex.Message);
+                return 1;
+            }
         });
 
         return translate;

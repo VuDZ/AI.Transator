@@ -2,7 +2,9 @@
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Epub;
 using Ai.Translator.Core.Glossary;
+using Ai.Translator.Core.Llm;
 using Ai.Translator.Core.Options;
+using Ai.Translator.Core.Translation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -44,6 +46,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IGlossaryCompiler, GlossaryCompiler>();
         services.AddSingleton<IEpubBookService, EpubBookService>();
         services.AddSingleton<IGlossaryCompileService, GlossaryCompileService>();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<ITokenEstimator, LengthTokenEstimator>();
+        services.AddSingleton<ITranslationPromptFactory, TranslationPromptFactory>();
+        services.AddSingleton<IChapterChunker, ChapterChunker>();
+        services.AddSingleton<ITranslationValidator, TranslationValidator>();
+        services.AddSingleton<ICheckpointStore, FileCheckpointStore>();
+        services.AddSingleton<ILlmProvider, UnconfiguredLlmProvider>();
+        services.AddSingleton<IBookTranslationService, BookTranslationService>();
 
         return services;
     }
