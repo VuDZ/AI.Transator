@@ -52,7 +52,7 @@
 ai-translator glossary compile --corpus <path> --book <path> --out <path>
 ai-translator glossary extract --original <path> --translation <path> --out <path>
 ai-translator translate --input <path> --glossary <path> --out <path>
-    [--model <id>] [--work-dir <path>] [--resume]
+    [--model <id>] [--work-dir <path>] [--resume] [--chapters <n>|<from>-<to>]
 ```
 
 Интерфейсы в Core можно объявить пустыми или не объявлять до своих эпох. Если объявляете сразу — имена из [architecture.md](../architecture.md):
