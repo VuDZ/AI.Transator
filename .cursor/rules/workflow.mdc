@@ -21,6 +21,8 @@ alwaysApply: true
 - `git add` / `git commit` на `master` — в rsolyn нет commit
 - операция, которой нет в MCP; в ответе явно написать, чего не хватило
 
+Шелл — Windows PowerShell 5.x: не `&&` / `||`. Цепочка — `;` или отдельные вызовы. Подробности: `windows-shell.mdc`.
+
 Не вызывать `stop_mcp_server` без просьбы.
 
 ## Коммит после успеха

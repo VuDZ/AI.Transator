@@ -1,0 +1,22 @@
+---
+description: Host is Windows PowerShell; bash operators like && do not work
+alwaysApply: true
+---
+
+# Windows PowerShell
+
+Хост — Windows, шелл — **Windows PowerShell 5.x**, не bash и не pwsh.
+
+`&&` и `||` как разделители команд **не работают** (ошибка `The token '&&' is not a valid statement separator`).
+
+- Несколько команд: отдельные вызовы Shell **или** `;` между ними
+- Не копировать bash: `$(cat <<'EOF' ...)`, `export`, `&&`, `||`
+- Git: `git add ...; git commit -m "..."`
+
+```powershell
+# BAD
+git add src && git commit -m "feat: something"
+
+# GOOD
+git add src; git commit -m "feat: something"
+```

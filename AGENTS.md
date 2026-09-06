@@ -9,6 +9,8 @@
 Исключение: `git add` / `git commit` на `master`.
 Если нужной MCP-операции нет — сказать об этом, не молча уйти в шелл.
 
+Шелл хоста — Windows PowerShell 5.x. Не `&&` / `||`; цепочка через `;` или отдельные вызовы.
+
 Перед семантикой C#: `load_workspace`. Сборка: `run_dotnet_build`. Тесты: `run_dotnet_test` / `run_specific_test`.
 
 ## Коммиты
