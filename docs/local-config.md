@@ -20,12 +20,15 @@
     "ApiKey": "sk-...",
     "ContextWindowTokens": 128000,
     "ReservedOutputTokens": 8000,
+    "TimeoutSeconds": 300,
     "CacheMode": "none"
   }
 }
 ```
 
 `CacheMode`: `none` или `openrouter` (явный `cache_control` на префиксе).
+
+`TimeoutSeconds` — лимит одного нестримингового запроса (дефолт 300). Дефолт `HttpClient` 100 с обрывает длинную главу. 504 — ретраимый, не повод включать streaming.
 
 Ключ в example — пустая строка. В настоящем Local — боевой ключ. Не логировать `ApiKey` и заголовок Authorization.
 
@@ -45,4 +48,4 @@ Local лежит рядом с csproj и копируется в output (`Preser
 
 ## HttpClient
 
-Один клиент `llm`. `BaseAddress` из Options. Bearer из `Llm:ApiKey` при регистрации клиента (не из env).
+Один клиент `llm`. `BaseAddress` и `Timeout` из Options (`TimeoutSeconds`). Bearer из `Llm:ApiKey` при регистрации клиента (не из env).

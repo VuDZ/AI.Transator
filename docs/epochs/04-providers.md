@@ -17,8 +17,8 @@
 - POST `{BaseUrl}/chat/completions`, `stream: false`, `Authorization: Bearer` из `Llm:ApiKey`
 - `CacheMode` из Local: `none` или `openrouter` (`cache_control` на префиксе)
 - `max_tokens`, `temperature`, `model`
-- таймаут HttpClient из Options
-- HTTP 401/403 — «ключ / шлюз», 429 — ретраимый
+- `Llm:TimeoutSeconds` из Options на именованный HttpClient `llm` (дефолт **300**; дефолт BCL 100 с слишком короток для главы). Значение ≤ 0 — ошибка до HTTP
+- HTTP 401/403 — «ключ / шлюз»; 429 и 5xx включая **504** — ретраимые
 - unit-тесты сериализации (мок `HttpMessageHandler`): при `openrouter` есть `cache_control`, при `none` — нет; prefix в system, variable в user
 - `--model` перекрывает Local на запуск
 
@@ -27,7 +27,7 @@
 ## Вне скоупа
 
 - три захардкоженных вендора в git
-- Responses API, Anthropic Messages, streaming, embeddings
+- Responses API, Anthropic Messages, streaming / SSE (таймаут шлюза не повод сдавать `stream: false`), embeddings
 - ключ в committed json или обязательный env
 - подбор модели «кто лучше переводит»
 
@@ -40,6 +40,7 @@
 ## Критерии приёмки
 
 - нет `new HttpClient`
+- `HttpClient.Timeout` = `Llm:TimeoutSeconds` (дефолт 300); ≤ 0 — ошибка до запроса
 - пустой ключ или нет Local/`BaseUrl` — ошибка до запроса, с отсылкой к example
 - тесты не ходят в сеть и не читают настоящий Local с машины агента как фикстуру (подкладывать тестовый JSON)
 - `CachedTokens` парсится из usage, если поле есть, иначе null
@@ -50,6 +51,7 @@
 - Закоммитить заполненный Local — не должен пройти `.gitignore`
 - Склеить prefix с главой в одном user — ломает кеш
 - Логировать Bearer — запрещено
+- Длинная глава без стрима на прокси ловит 504: таймаут 300 с + ретрай, не SSE
 
 ## Зависимости
 

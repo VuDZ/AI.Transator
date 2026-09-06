@@ -110,7 +110,7 @@ ai-translator translate --input <epub> --glossary <md> --out <epub>
 - Регистрация в одном месте: `ServiceCollectionExtensions` в Core, вызов из Cli Host.
 - Тяжёлые I/O-объекты не создаются через `new` в бизнес-логике. `HttpClient` — только из `IHttpClientFactory`.
 - Конфиг — `IOptions<TranslatorOptions>` и `IOptions<LlmOptions>`: json + `appsettings.Local.json` + env, см. [local-config.md](local-config.md).
-- Один `ILlmProvider`, один HttpClient `llm`. Без keyed DI и без резолвера по имени провайдера.
+- Один `ILlmProvider`, один HttpClient `llm`. `Timeout` — `Llm:TimeoutSeconds` (дефолт 300). Без keyed DI и без резолвера по имени провайдера.
 - Время — `TimeProvider` (ретраи, задержки).
 - Логирование через `ILogger<T>`. Тела промптов с полным словарём в Information не писать.
 
