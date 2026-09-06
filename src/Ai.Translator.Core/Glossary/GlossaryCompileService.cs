@@ -1,4 +1,6 @@
-﻿using Ai.Translator.Core.Abstractions;
+﻿using System.Text;
+using Ai.Translator.Core.Abstractions;
+using Ai.Translator.Core.Domain;
 
 namespace Ai.Translator.Core.Glossary;
 
@@ -7,22 +9,22 @@ public sealed class GlossaryCompileService : IGlossaryCompileService
     private readonly IGlossaryParser _parser;
     private readonly IGlossaryWriter _writer;
     private readonly IGlossaryCompiler _compiler;
-    private readonly IBookTextExtractor _bookTextExtractor;
+    private readonly IEpubBookService _epubBookService;
 
     public GlossaryCompileService(
         IGlossaryParser parser,
         IGlossaryWriter writer,
         IGlossaryCompiler compiler,
-        IBookTextExtractor bookTextExtractor)
+        IEpubBookService epubBookService)
     {
         ArgumentNullException.ThrowIfNull(parser);
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(compiler);
-        ArgumentNullException.ThrowIfNull(bookTextExtractor);
+        ArgumentNullException.ThrowIfNull(epubBookService);
         _parser = parser;
         _writer = writer;
         _compiler = compiler;
-        _bookTextExtractor = bookTextExtractor;
+        _epubBookService = epubBookService;
     }
 
     public async Task CompileAsync(
@@ -63,9 +65,8 @@ public sealed class GlossaryCompileService : IGlossaryCompileService
                 "Corpus Markdown is invalid: no glossary entries (## headings).");
         }
 
-        var bookPlainText = await _bookTextExtractor
-            .ExtractPlainTextAsync(bookPath, cancellationToken)
-            .ConfigureAwait(false);
+        var book = await _epubBookService.OpenAsync(bookPath, cancellationToken).ConfigureAwait(false);
+        var bookPlainText = JoinPlainText(book.Chapters);
         var working = _compiler.Compile(corpus, bookPlainText);
         var output = _writer.Write(working);
 
@@ -76,5 +77,21 @@ public sealed class GlossaryCompileService : IGlossaryCompileService
         }
 
         await File.WriteAllTextAsync(outputPath, output, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string JoinPlainText(IReadOnlyList<EpubChapter> chapters)
+    {
+        var builder = new StringBuilder();
+        foreach (var chapter in chapters)
+        {
+            if (builder.Length > 0)
+            {
+                builder.Append('\n');
+            }
+
+            builder.Append(chapter.PlainText);
+        }
+
+        return builder.ToString();
     }
 }

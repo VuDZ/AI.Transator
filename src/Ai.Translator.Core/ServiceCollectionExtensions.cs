@@ -42,7 +42,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IGlossaryParser, GlossaryParser>();
         services.AddSingleton<IGlossaryWriter, GlossaryWriter>();
         services.AddSingleton<IGlossaryCompiler, GlossaryCompiler>();
-        services.AddSingleton<IBookTextExtractor, EpubBookTextExtractor>();
+        services.AddSingleton<IEpubBookService, EpubBookService>();
         services.AddSingleton<IGlossaryCompileService, GlossaryCompileService>();
 
         return services;
