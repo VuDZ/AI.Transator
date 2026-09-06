@@ -17,3 +17,4 @@ alwaysApply: true
 - один `ILlmProvider`: нестриминговый Chat Completions; BaseUrl/Model/ApiKey в `appsettings.Local.json`
 
 Проверка диффа: не расходится ли с epoch-файлом и форматом словаря. Расходится — спросить или сначала поправить docs.
+После сдачи эпохи замечания только в `docs/fixes/0X-*.md`.
