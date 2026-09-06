@@ -67,6 +67,42 @@ public sealed class EpubBookServiceTests
     }
 
     [Fact]
+    public async Task OpenAsync_UnlistedMarkupWithText_FallsBackToBodyInnerHtml()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-translator-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var epubPath = MinimalEpubFactory.Create(
+                root,
+                "<div>Wrapped in a <em>div</em></div>",
+                "Bare text with <strong>inline</strong>");
+            var service = new EpubBookService();
+
+            var book = await service.OpenAsync(epubPath, CancellationToken.None);
+
+            Assert.Equal(2, book.Chapters.Count);
+            var divChapter = book.Chapters[0];
+            var fragment = Assert.Single(divChapter.BlockFragments);
+            Assert.Equal(divChapter.BodyInnerHtml, fragment);
+            Assert.Contains("<div>", fragment, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("<em>", fragment, StringComparison.OrdinalIgnoreCase);
+
+            var bareChapter = book.Chapters[1];
+            var bareFragment = Assert.Single(bareChapter.BlockFragments);
+            Assert.Equal(bareChapter.BodyInnerHtml, bareFragment);
+            Assert.Contains("<strong>", bareFragment, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Bare text", bareChapter.PlainText, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task WriteCopyAsync_ReplacesBodyKeepsAssetsAndSource()
     {
         var root = Path.Combine(Path.GetTempPath(), "ai-translator-tests", Guid.NewGuid().ToString("N"));

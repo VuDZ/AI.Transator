@@ -29,6 +29,15 @@ internal static class XhtmlChapterParser
 
         var fragments = new List<string>();
         CollectBlocks(body, fragments);
+        if (fragments.Count == 0)
+        {
+            var inner = body.InnerHtml;
+            if (!string.IsNullOrWhiteSpace(inner))
+            {
+                fragments.Add(inner);
+            }
+        }
+
         return fragments;
     }
 

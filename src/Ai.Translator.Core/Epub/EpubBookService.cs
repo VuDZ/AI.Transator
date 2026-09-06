@@ -65,7 +65,7 @@ public sealed class EpubBookService : IEpubBookService
         }
     }
 
-    public Task WriteCopyAsync(
+    public async Task WriteCopyAsync(
         string sourcePath,
         string destinationPath,
         IReadOnlyList<EpubReplace> replacements,
@@ -84,7 +84,23 @@ public sealed class EpubBookService : IEpubBookService
                 Directory.CreateDirectory(directory);
             }
 
-            File.Copy(sourcePath, destinationPath, overwrite: true);
+            await using (var source = new FileStream(
+                sourcePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.SequentialScan))
+            await using (var destination = new FileStream(
+                destinationPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.Asynchronous))
+            {
+                await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+            }
 
             using var archive = ZipFile.Open(destinationPath, ZipArchiveMode.Update);
             foreach (var replacement in replacements)
@@ -104,9 +120,15 @@ public sealed class EpubBookService : IEpubBookService
                 }
 
                 string originalXhtml;
-                using (var reader = new StreamReader(entry.Open(), Utf8NoBom, detectEncodingFromByteOrderMarks: true))
+                await using (var entryStream = entry.Open())
+                using (var reader = new StreamReader(
+                    entryStream,
+                    Utf8NoBom,
+                    detectEncodingFromByteOrderMarks: true,
+                    bufferSize: 1024,
+                    leaveOpen: true))
                 {
-                    originalXhtml = reader.ReadToEnd();
+                    originalXhtml = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
                 }
 
                 var updatedXhtml = XhtmlChapterParser.ReplaceBodyInnerHtml(
@@ -115,8 +137,16 @@ public sealed class EpubBookService : IEpubBookService
                 entry.Delete();
 
                 var created = archive.CreateEntry(entryName, CompressionLevel.Optimal);
-                using var writer = new StreamWriter(created.Open(), Utf8NoBom);
-                writer.Write(updatedXhtml);
+                await using (var createdStream = created.Open())
+                await using (var writer = new StreamWriter(
+                    createdStream,
+                    Utf8NoBom,
+                    bufferSize: 1024,
+                    leaveOpen: true))
+                {
+                    await writer.WriteAsync(updatedXhtml.AsMemory(), cancellationToken).ConfigureAwait(false);
+                    await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+                }
             }
         }
         catch (OperationCanceledException)
@@ -127,7 +157,5 @@ public sealed class EpubBookService : IEpubBookService
         {
             throw new InvalidOperationException($"Failed to write EPUB copy: {ex.Message}", ex);
         }
-
-        return Task.CompletedTask;
     }
 }

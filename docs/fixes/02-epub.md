@@ -1,14 +1,15 @@
 # Правки после эпохи 02
 
-Статус: **принята с замечаниями**. 30 тестов зелёные. `IEpubBookService` читает spine и пишет копию ZIP; CSS/картинки/`mimetype` на месте; `<em>`/`<i>` в `BodyInnerHtml` и блоках; пустые spine-элементы пропускаются; compile идёт через этот порт; `IBookTextExtractor` снят.
+Статус: **пункты 1–2 закрыты** (проверено). Пункт 3 — наблюдение на живых книгах, заранее не чинить.
 
-## До эпохи 03
+## Закрыто
 
-1. **Пустые `BlockFragments` при живом тексте.** Глава из `<div>…</div>` или голого текста в `body` попадает в `Chapters` (plain text не пустой), а список блоков пуст (`p`/`h*`/`blockquote`/`li`). Чанкер не должен молча проглатывать такую главу: fallback на `BodyInnerHtml` или явная ошибка.
+1. **Пустые `BlockFragments` при живом тексте.** Если в `body` нет `p`/`h*`/`blockquote`/`li`, но InnerHtml не пустой (`div`, голый текст), `GetBlockFragments` кладёт `BodyInnerHtml` одним фрагментом. Чанкер не получит пустой список при непустой главе.
+2. **`WriteCopyAsync` async I/O.** Копия файла — `CopyToAsync`; entry — `ReadToEndAsync` / `WriteAsync`. Без `Task.Run` и без синхронного `File.Copy`/`ReadToEnd`.
 
-2. **`WriteCopyAsync` синхронный внутри.** `File.Copy`, ZIP и `ReadToEnd` блокируют поток. Для 02 тесты зелёные; перед длинными книгами в 03 — `async` I/O или хотя бы `Task.Run` не надо, лучше настоящий async на чтение/запись entry.
+## Наблюдение
 
-3. **HAP `OptionOutputAsXml` + `OuterHtml`.** Replace пересобирает весь XHTML. На фикстуре VersOne открывает копию. На живых книгах возможны сюрпризы с xmlns/self-closing. Если после первой реальной книги разъедется вёрстка — смотреть сюда, не плодить второй writer.
+3. **HAP `OptionOutputAsXml` + `OuterHtml`.** Replace по-прежнему пересобирает XHTML через HAP. На фикстуре VersOne открывает копию. Если после первой реальной книги разъедется вёрстка — править этот writer, не плодить второй.
 
 ## Не дефект 02
 
