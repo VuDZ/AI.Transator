@@ -298,9 +298,16 @@ public sealed class BookTranslationServiceTests
             var output = Path.Combine(root, "out.epub");
             var workDir = Path.Combine(root, "work");
             string? prefix = null;
+            var promptRoot = Path.Combine(root, "prompt-root");
+            Directory.CreateDirectory(Path.Combine(promptRoot, "prompts"));
+            await File.WriteAllTextAsync(
+                Path.Combine(promptRoot, "prompts", "translate-system.md"),
+                "CANON_LAYER_ONE_FROM_FILE\n");
             var llm = CreateMappingLlm(req =>
             {
                 prefix = req.StablePrefix;
+                Assert.Contains("CANON_LAYER_ONE_FROM_FILE", req.StablePrefix, StringComparison.Ordinal);
+                Assert.DoesNotContain("Translate to Russian. Keep HTML.", req.StablePrefix, StringComparison.Ordinal);
                 Assert.Contains("## Librarian", req.StablePrefix, StringComparison.Ordinal);
                 Assert.Contains("Библиарий", req.StablePrefix, StringComparison.Ordinal);
                 Assert.DoesNotContain("UNIQUE_CHAPTER_PHRASE", req.StablePrefix, StringComparison.Ordinal);
@@ -309,7 +316,8 @@ public sealed class BookTranslationServiceTests
                 return Ok("<p>Уникальная фраза Эйзенхорн Библиарий</p>");
             });
 
-            var result = await CreateService(llm.Object).RunAsync(
+            var loader = new StyleRulesLoader(promptRoot);
+            var result = await CreateService(llm.Object, styleRulesLoader: loader).RunAsync(
                 Job(input, glossary, output, workDir),
                 CancellationToken.None);
 
@@ -320,7 +328,7 @@ public sealed class BookTranslationServiceTests
             Assert.DoesNotContain("Eisenhorn", prefix, StringComparison.Ordinal);
 
             var resumeLlm = new Mock<ILlmProvider>(MockBehavior.Strict);
-            var resume = await CreateService(resumeLlm.Object).RunAsync(
+            var resume = await CreateService(resumeLlm.Object, styleRulesLoader: loader).RunAsync(
                 new TranslationJob
                 {
                     InputPath = input,
@@ -446,7 +454,10 @@ public sealed class BookTranslationServiceTests
         }
     }
 
-    private static BookTranslationService CreateService(ILlmProvider llm, int maxRetries = 3)
+    private static BookTranslationService CreateService(
+        ILlmProvider llm,
+        int maxRetries = 3,
+        StyleRulesLoader? styleRulesLoader = null)
     {
         return new BookTranslationService(
             new EpubBookService(),
@@ -469,7 +480,8 @@ public sealed class BookTranslationServiceTests
                 ContextWindowTokens = 8000,
                 ReservedOutputTokens = 500
             }),
-            TimeProvider.System);
+            TimeProvider.System,
+            styleRulesLoader: styleRulesLoader);
     }
 
     private static TranslationJob Job(

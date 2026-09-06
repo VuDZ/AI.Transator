@@ -69,7 +69,7 @@ IBookTranslationService.RunAsync(TranslationJob, ct)
 ICheckpointStore.Load/Save
 ```
 
-`styleRules` — текст [`prompts/translate-system.md`](../../prompts/translate-system.md), не вшивать WH40k. Factory: слой 1 (этот файл) + `IGlossaryWriter.Write(working)` (преамбула и записи). Не класть правила в чанкер. Пока в коде дубль живёт в `TranslatorOptions.StyleRules` — см. [fixes/03-translation.md](../fixes/03-translation.md).
+`styleRules` — текст [`prompts/translate-system.md`](../../prompts/translate-system.md), не вшивать WH40k. Cli копирует файл в output; loader читает его с диска. `TranslatorOptions.StyleRules` — только fallback, если файла нет. Factory: слой 1 + `IGlossaryWriter.Write(working)`. Не класть правила в чанкер.
 
 Work-dir:
 

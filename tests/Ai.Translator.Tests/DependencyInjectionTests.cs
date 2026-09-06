@@ -2,6 +2,7 @@
 using Ai.Translator.Core;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Options;
+using Ai.Translator.Core.Translation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -67,6 +68,7 @@ public sealed class DependencyInjectionTests
         Assert.NotNull(provider.GetRequiredService<IGlossaryCompileService>());
         Assert.NotNull(provider.GetRequiredService<ITokenEstimator>());
         Assert.NotNull(provider.GetRequiredService<ITranslationPromptFactory>());
+        Assert.NotNull(provider.GetRequiredService<StyleRulesLoader>());
         Assert.NotNull(provider.GetRequiredService<IChapterChunker>());
         Assert.NotNull(provider.GetRequiredService<ITranslationValidator>());
         Assert.NotNull(provider.GetRequiredService<ICheckpointStore>());

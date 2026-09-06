@@ -23,6 +23,7 @@ public sealed class BookTranslationService : IBookTranslationService
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<BookTranslationService> _logger;
     private readonly TermCandidateExtractor _candidates;
+    private readonly StyleRulesLoader _styleRulesLoader;
 
     public BookTranslationService(
         IEpubBookService epub,
@@ -36,7 +37,8 @@ public sealed class BookTranslationService : IBookTranslationService
         IOptions<TranslatorOptions> translatorOptions,
         IOptions<LlmOptions> llmOptions,
         TimeProvider timeProvider,
-        ILogger<BookTranslationService>? logger = null)
+        ILogger<BookTranslationService>? logger = null,
+        StyleRulesLoader? styleRulesLoader = null)
     {
         ArgumentNullException.ThrowIfNull(epub);
         ArgumentNullException.ThrowIfNull(glossaryParser);
@@ -62,6 +64,7 @@ public sealed class BookTranslationService : IBookTranslationService
         _timeProvider = timeProvider;
         _logger = logger ?? NullLogger<BookTranslationService>.Instance;
         _candidates = new TermCandidateExtractor();
+        _styleRulesLoader = styleRulesLoader ?? new StyleRulesLoader();
     }
 
     public async Task<TranslationResult> RunAsync(TranslationJob job, CancellationToken cancellationToken)
@@ -99,7 +102,10 @@ public sealed class BookTranslationService : IBookTranslationService
 
         var glossaryMarkdown = await File.ReadAllTextAsync(job.GlossaryPath, cancellationToken).ConfigureAwait(false);
         var working = _glossaryParser.Parse(glossaryMarkdown);
-        var prefix = _promptFactory.Create(working, translator.StyleRules ?? string.Empty);
+        var styleRules = await _styleRulesLoader
+            .LoadAsync(translator.StyleRules, cancellationToken)
+            .ConfigureAwait(false);
+        var prefix = _promptFactory.Create(working, styleRules);
         var prefixHash = PrefixHasher.ComputeSha256Hex(prefix);
         var prefixTokens = _tokenEstimator.Estimate(prefix);
 

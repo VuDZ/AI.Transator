@@ -49,6 +49,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ITokenEstimator, LengthTokenEstimator>();
         services.AddSingleton<ITranslationPromptFactory, TranslationPromptFactory>();
+        services.AddSingleton(_ => new StyleRulesLoader(AppContext.BaseDirectory));
         services.AddSingleton<IChapterChunker, ChapterChunker>();
         services.AddSingleton<ITranslationValidator, TranslationValidator>();
         services.AddSingleton<ICheckpointStore, FileCheckpointStore>();

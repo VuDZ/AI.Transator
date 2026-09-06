@@ -30,6 +30,9 @@
     <None Update="appsettings.Local.json.example">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
+    <None Include="..\..\prompts\translate-system.md" Link="prompts\translate-system.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

@@ -10,11 +10,5 @@ public sealed class TranslatorOptions
 
     public double Temperature { get; set; } = 0.3;
 
-    public string StyleRules { get; set; } =
-        """
-        You are a literary translator. Translate the user XHTML fragment from English into Russian.
-        Keep every HTML tag, attribute, and entity. Do not wrap the answer in markdown fences.
-        Obey the working glossary and preamble below. Do not invent competing canonical names.
-        Reply with the translated XHTML fragment only.
-        """.Trim();
+    public string StyleRules { get; set; } = string.Empty;
 }
