@@ -5,24 +5,25 @@ namespace Ai.Translator.Cli;
 
 internal static class CommandTree
 {
-    public static RootCommand Create()
+    public static RootCommand Create(IServiceProvider services)
     {
-        var root = new RootCommand("Literary EPUB translation with a universe glossary.");
+        ArgumentNullException.ThrowIfNull(services);
 
-        root.Subcommands.Add(CreateGlossaryCommand());
-        root.Subcommands.Add(CreateTranslateCommand());
+        var root = new RootCommand("Literary EPUB translation with a universe glossary.");
+        root.Subcommands.Add(CreateGlossaryCommand(services));
+        root.Subcommands.Add(CreateTranslateCommand(services));
         return root;
     }
 
-    private static Command CreateGlossaryCommand()
+    private static Command CreateGlossaryCommand(IServiceProvider services)
     {
         var glossary = new Command("glossary", "Glossary compile and extract commands.");
-        glossary.Subcommands.Add(CreateCompileCommand());
-        glossary.Subcommands.Add(CreateExtractCommand());
+        glossary.Subcommands.Add(CreateCompileCommand(services));
+        glossary.Subcommands.Add(CreateExtractCommand(services));
         return glossary;
     }
 
-    private static Command CreateCompileCommand()
+    private static Command CreateCompileCommand(IServiceProvider services)
     {
         var corpusOption = new Option<string>("--corpus")
         {
@@ -49,6 +50,8 @@ internal static class CommandTree
 
         compile.SetAction(parseResult =>
         {
+            ArgumentNullException.ThrowIfNull(services);
+
             var book = parseResult.GetValue(bookOption);
             if (book is not null && InputPathGuard.IsPdf(book))
             {
@@ -63,7 +66,7 @@ internal static class CommandTree
         return compile;
     }
 
-    private static Command CreateExtractCommand()
+    private static Command CreateExtractCommand(IServiceProvider services)
     {
         var originalOption = new Option<string>("--original")
         {
@@ -90,6 +93,7 @@ internal static class CommandTree
 
         extract.SetAction(parseResult =>
         {
+            ArgumentNullException.ThrowIfNull(services);
             parseResult.InvocationConfiguration.Error.WriteLine("Not implemented.");
             return 1;
         });
@@ -97,7 +101,7 @@ internal static class CommandTree
         return extract;
     }
 
-    private static Command CreateTranslateCommand()
+    private static Command CreateTranslateCommand(IServiceProvider services)
     {
         var inputOption = new Option<string>("--input")
         {
@@ -144,6 +148,8 @@ internal static class CommandTree
 
         translate.SetAction(parseResult =>
         {
+            ArgumentNullException.ThrowIfNull(services);
+
             var input = parseResult.GetValue(inputOption);
             if (input is not null && InputPathGuard.IsPdf(input))
             {

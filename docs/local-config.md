@@ -37,7 +37,7 @@ Host, последний побеждает:
 2. `appsettings.Local.json` (`optional: true`)
 3. env (не обязателен; не заставляем выставлять ключ вручную)
 
-Local лежит рядом с csproj и копируется в output (`PreserveNewest`). `dotnet run` читает из проекта. Запуск из `bin/` — копия из output.
+Local лежит рядом с csproj и копируется в output (`PreserveNewest`). Host читает `ContentRootPath = AppContext.BaseDirectory`: и `dotnet run`, и запуск exe из `bin/` берут копию рядом с dll, а не файл в папке проекта напрямую.
 
 Нет файла, пустой `BaseUrl` или пустой `ApiKey` — ошибка до HTTP: скопируй example в `appsettings.Local.json` и заполни.
 

@@ -1,6 +1,4 @@
-using Ai.Translator.Cli;
+﻿using Ai.Translator.Cli;
 
-using (TranslatorHost.CreateBuilder().Build())
-{
-    return await CommandTree.Create().Parse(args).InvokeAsync();
-}
+using var host = TranslatorHost.CreateBuilder().Build();
+return await CommandTree.Create(host.Services).Parse(args).InvokeAsync();
