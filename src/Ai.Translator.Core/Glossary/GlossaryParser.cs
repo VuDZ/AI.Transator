@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 using Microsoft.Extensions.Logging;
@@ -231,5 +231,44 @@ public sealed class GlossaryParser : IGlossaryParser
         }
 
         return sb.ToString();
+    }
+
+    public GlossaryDocument ParseModelOutput(string markdown)
+    {
+        ArgumentNullException.ThrowIfNull(markdown);
+        var sliced = SliceFromFirstEntryHeading(markdown);
+        if (sliced is null)
+        {
+            return new GlossaryDocument { Title = "Extracted", Entries = [] };
+        }
+
+        return Parse("# Extracted\n\n" + sliced);
+    }
+
+    public static string? SliceFromFirstEntryHeading(string markdown)
+    {
+        ArgumentNullException.ThrowIfNull(markdown);
+        var lines = markdown.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n');
+
+        var start = -1;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (IsEntryHeading(lines[i]))
+            {
+                start = i;
+                break;
+            }
+        }
+
+        if (start < 0)
+        {
+            return null;
+        }
+
+        var slice = new string[lines.Length - start];
+        Array.Copy(lines, start, slice, 0, slice.Length);
+        return string.Join('\n', slice);
     }
 }

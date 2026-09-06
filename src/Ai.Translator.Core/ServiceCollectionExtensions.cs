@@ -49,17 +49,21 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IGlossaryParser, GlossaryParser>();
         services.AddSingleton<IGlossaryWriter, GlossaryWriter>();
         services.AddSingleton<IGlossaryCompiler, GlossaryCompiler>();
+        services.AddSingleton<IGlossaryMerger, GlossaryMerger>();
         services.AddSingleton<IEpubBookService, EpubBookService>();
         services.AddSingleton<IGlossaryCompileService, GlossaryCompileService>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ITokenEstimator, LengthTokenEstimator>();
         services.AddSingleton<ITranslationPromptFactory, TranslationPromptFactory>();
         services.AddSingleton(_ => new StyleRulesLoader(AppContext.BaseDirectory));
+        services.AddSingleton(_ => new ExtractRulesLoader(AppContext.BaseDirectory));
         services.AddSingleton<IChapterChunker, ChapterChunker>();
         services.AddSingleton<ITranslationValidator, TranslationValidator>();
         services.AddSingleton<ICheckpointStore, FileCheckpointStore>();
         services.AddSingleton<ILlmProvider, ChatCompletionsLlmProvider>();
         services.AddSingleton<IBookTranslationService, BookTranslationService>();
+        services.AddSingleton<IGlossaryExtractor, GlossaryExtractor>();
+        services.AddSingleton<IGlossaryExtractService, GlossaryExtractService>();
 
         return services;
     }

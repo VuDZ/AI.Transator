@@ -94,6 +94,7 @@ flowchart TD
 ```
 ai-translator glossary compile --corpus <md> --book <epub> --out <md>
 ai-translator glossary extract --original <epub> --translation <epub> --out <md>
+            [--merge-into <corpus.md>] [--model <id>]
 ai-translator translate --input <epub> --glossary <md> --out <epub>
             [--model <id>] [--work-dir <path>] [--resume]
             [--chapters <n>|<from>-<to>]
@@ -103,7 +104,7 @@ ai-translator translate --input <epub> --glossary <md> --out <epub>
 
 Выход всегда полный EPUB: выбранные главы переведены, остальные скопированы с оригинала. Нужно, чтобы проверять пайплайн на куске, не гоняя 400 страниц.
 
-`glossary extract` появляется в эпохе 05. До этого команда может существовать как заглушка с понятной ошибкой «эпоха не реализована», либо отсутствовать — см. эпоху 00.
+`glossary extract` пишет предложенный MD в `--out`. `--merge-into` подмешивает записи в существующий корпус по правилам [glossary-format.md](glossary-format.md) (канонический `ru` не затирается); тот же путь, что `--out`, — запись in-place.
 
 ## DI и конфигурация
 

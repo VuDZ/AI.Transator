@@ -105,19 +105,66 @@ internal static class CommandTree
             Description = "Extracted glossary Markdown output path.",
             Required = true
         };
+        var mergeIntoOption = new Option<string?>("--merge-into")
+        {
+            Description = "Existing corpus Markdown to merge into. Writes to --out (in-place when paths match)."
+        };
+        var modelOption = new Option<string?>("--model")
+        {
+            Description = "Override Llm:Model for this run."
+        };
 
         var extract = new Command("extract", "Extract glossary candidates from an original and its translation.")
         {
             originalOption,
             translationOption,
-            outOption
+            outOption,
+            mergeIntoOption,
+            modelOption
         };
 
-        extract.SetAction(parseResult =>
+        extract.SetAction(async (parseResult, cancellationToken) =>
         {
             ArgumentNullException.ThrowIfNull(services);
-            parseResult.InvocationConfiguration.Error.WriteLine("Not implemented.");
-            return 1;
+
+            var original = parseResult.GetValue(originalOption);
+            var translation = parseResult.GetValue(translationOption);
+            if (original is not null && InputPathGuard.IsPdf(original))
+            {
+                parseResult.InvocationConfiguration.Error.WriteLine(InputPathGuard.PdfRejectedMessage);
+                return 1;
+            }
+
+            if (translation is not null && InputPathGuard.IsPdf(translation))
+            {
+                parseResult.InvocationConfiguration.Error.WriteLine(InputPathGuard.PdfRejectedMessage);
+                return 1;
+            }
+
+            var output = parseResult.GetValue(outOption);
+            if (original is null || translation is null || output is null)
+            {
+                parseResult.InvocationConfiguration.Error.WriteLine("Missing required argument.");
+                return 1;
+            }
+
+            try
+            {
+                var extractService = services.GetRequiredService<IGlossaryExtractService>();
+                await extractService.ExtractAsync(
+                    original,
+                    translation,
+                    output,
+                    parseResult.GetValue(mergeIntoOption),
+                    parseResult.GetValue(modelOption),
+                    cancellationToken);
+                return 0;
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or GlossaryFormatException or InvalidOperationException or LlmException)
+            {
+                parseResult.InvocationConfiguration.Error.WriteLine(ex.Message);
+                return 1;
+            }
         });
 
         return extract;

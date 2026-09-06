@@ -33,6 +33,9 @@
     <None Include="..\..\prompts\translate-system.md" Link="prompts\translate-system.md">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="..\..\prompts\extract-system.md" Link="prompts\extract-system.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

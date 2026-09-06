@@ -1,4 +1,4 @@
-using Ai.Translator.Core.Domain;
+﻿using Ai.Translator.Core.Domain;
 using Ai.Translator.Core.Glossary;
 
 namespace Ai.Translator.Tests;
@@ -102,6 +102,40 @@ public sealed class GlossaryRoundTripTests
         var parser = new GlossaryParser();
         var ex = Assert.Throws<GlossaryFormatException>(() => parser.Parse("Only preamble.\n"));
         Assert.Contains("# heading", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseModelOutput_TakesEntriesFromFirstHeading_IgnoresSurroundingText()
+    {
+        const string response =
+            """
+            Sure, here are the terms I found.
+
+            ## Librarian
+            - ru: Библиарий
+            - type: title
+
+            ## Adeptus Astartes
+            - ru: Адептус Астартес
+            - type: organization
+
+            Hope this helps.
+            """;
+
+        var parsed = new GlossaryParser().ParseModelOutput(response);
+        Assert.Equal("Extracted", parsed.Title);
+        Assert.Equal(2, parsed.Entries.Count);
+        Assert.Equal("Librarian", parsed.Entries[0].English);
+        Assert.Equal("Библиарий", parsed.Entries[0].Ru);
+        Assert.Equal("Adeptus Astartes", parsed.Entries[1].English);
+    }
+
+    [Fact]
+    public void ParseModelOutput_NoEntries_ReturnsEmptyDocument()
+    {
+        var parsed = new GlossaryParser().ParseModelOutput("No glossary terms in this chapter.");
+        Assert.Equal("Extracted", parsed.Title);
+        Assert.Empty(parsed.Entries);
     }
 
     private static void AssertDocumentsEqual(GlossaryDocument expected, GlossaryDocument actual)

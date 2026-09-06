@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using Ai.Translator.Core;
 using Ai.Translator.Core.Abstractions;
+using Ai.Translator.Core.Glossary;
 using Ai.Translator.Core.Llm;
 using Ai.Translator.Core.Options;
 using Ai.Translator.Core.Translation;
@@ -70,16 +71,20 @@ public sealed class DependencyInjectionTests
         Assert.NotNull(provider.GetRequiredService<IGlossaryParser>());
         Assert.NotNull(provider.GetRequiredService<IGlossaryWriter>());
         Assert.NotNull(provider.GetRequiredService<IGlossaryCompiler>());
+        Assert.NotNull(provider.GetRequiredService<IGlossaryMerger>());
         Assert.NotNull(provider.GetRequiredService<IEpubBookService>());
         Assert.NotNull(provider.GetRequiredService<IGlossaryCompileService>());
         Assert.NotNull(provider.GetRequiredService<ITokenEstimator>());
         Assert.NotNull(provider.GetRequiredService<ITranslationPromptFactory>());
         Assert.NotNull(provider.GetRequiredService<StyleRulesLoader>());
+        Assert.NotNull(provider.GetRequiredService<ExtractRulesLoader>());
         Assert.NotNull(provider.GetRequiredService<IChapterChunker>());
         Assert.NotNull(provider.GetRequiredService<ITranslationValidator>());
         Assert.NotNull(provider.GetRequiredService<ICheckpointStore>());
         Assert.IsType<ChatCompletionsLlmProvider>(provider.GetRequiredService<ILlmProvider>());
         Assert.NotNull(provider.GetRequiredService<IBookTranslationService>());
+        Assert.IsType<GlossaryExtractor>(provider.GetRequiredService<IGlossaryExtractor>());
+        Assert.NotNull(provider.GetRequiredService<IGlossaryExtractService>());
         Assert.NotNull(provider.GetRequiredService<TimeProvider>());
     }
 
