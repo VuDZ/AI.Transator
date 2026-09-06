@@ -37,7 +37,7 @@ Python быстрее для промптов и парсинга вики. Зд
 | `Microsoft.NET.Test.Sdk` | Tests | Хост тестов |
 | `coverlet.collector` | Tests | Оставляем шаблон xunit как есть |
 
-Конфиг читается стандартными провайдерами Host: `appsettings.json`, переменные окружения, аргументы командной строки.
+Конфиг: `appsettings.json` (в git) + `appsettings.Local.json` (не в git) + env. Форма — [local-config.md](local-config.md).
 
 ## Что сознательно не берём
 
@@ -49,17 +49,11 @@ Python быстрее для промптов и парсинга вики. Зд
 - База данных, очередь, веб-хост
 - Python runtime внутри CLI
 
-## Переменные окружения для ключей
+## Доступ к модели
 
-Имена фиксируем сразу, чтобы эпохи 00 и 04 не разъехались:
+Один OpenAI-compatible endpoint. `BaseUrl` и `Model` — в `appsettings.Local.json`, не в git. Ключ — в env `TRANSLATOR_API_KEY` (имя можно переопределить в Local). Подробности: [local-config.md](local-config.md).
 
-| Провайдер | Переменная | Base URL по умолчанию |
-| --- | --- | --- |
-| OpenAI | `OPENAI_API_KEY` | `https://api.openai.com/v1` |
-| OpenRouter | `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` |
-| Provod.ai | `PROVOD_API_KEY` | `https://api.provod.ai/v1` |
-
-Ключ не хранится в репозитории и не логируется. В `appsettings.json` — только URL, имя переменной и профили моделей.
+В `appsettings.json` нет URL, модели и ключа.
 
 ## Язык и вход
 

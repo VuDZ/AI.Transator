@@ -10,7 +10,7 @@
 
 - EPUB оригинала
 - рабочий словарь книги (MD), уже скомпилированный
-- провайдер и модель (дефолты из Options)
+- модель из Local / `--model` (окно — `ContextWindowTokens` из Local)
 
 **Выход:**
 
@@ -34,7 +34,7 @@
 - `translate` перестаёт быть заглушкой
 - unit-тесты чанкера, валидатора, сборки префикса (словарь в prefix, текст главы не в prefix)
 
-Провайдер в этой эпохе может быть одним фейком/`ILlmProvider` + один живой OpenAI-compatible адаптер-заглушка. Тройка провайдеров доводится в эпохе 04, но контракт `LlmRequest` уже тот, что в [architecture.md](../architecture.md). Нельзя слать «весь промпт одной строкой» без разделения prefix/variable — эпоха 04 не сможет добавить кеш.
+В этой эпохе достаточно мока `ILlmProvider`. Живой HTTP — эпоха 04. Контракт `LlmRequest` уже с `StablePrefix` / `VariableContent`, иначе кеш в 04 не взвести.
 
 ## Вне скоупа
 
@@ -50,7 +50,7 @@
 
 ```
 ai-translator translate --input <epub> --glossary <md> --out <epub>
-    [--provider <name>] [--model <id>] [--work-dir <path>] [--resume]
+    [--model <id>] [--work-dir <path>] [--resume]
 ```
 
 ```
@@ -94,4 +94,4 @@ candidates.md
 
 ## Зависимости
 
-Эпохи 00–02. Живые три провайдера — 04, но порт LLM уже используется.
+Эпохи 00–02. Живой клиент и Local.json — 04, порт LLM уже используется.

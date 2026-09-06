@@ -2,97 +2,56 @@
 
 ## Цель
 
-Три бэкенда за одним портом: OpenAI, OpenRouter, Provod.ai. Пайплайн по-прежнему отдаёт `StablePrefix` + `VariableContent`. Нарезка смотрит на окно выбранной модели. Ключи не в логике перевода.
+Один OpenAI-compatible клиент. URL и модель — из локального файла, ключ — из env. Пайплайн по-прежнему отдаёт `StablePrefix` + `VariableContent`. Нарезка смотрит на окно из Local.
 
 ## Вход / выход
 
 **Вход:** `LlmRequest` из пайплайна.
 
-**Выход:** `LlmResponse` с текстом, `FinishReason`, usage и `CachedTokens`, если провайдер их отдал.
+**Выход:** `LlmResponse` с текстом, `FinishReason`, usage и `CachedTokens`, если шлюз их отдал.
 
 ## В скоупе
 
-- `ILlmProvider` / `ILlmProviderResolver` как в [architecture.md](../architecture.md)
-- один класс OpenAI-compatible клиента (или тонкие обёртки над ним), три именованных HttpClient
-- POST `{BaseUrl}/chat/completions`, `Authorization: Bearer`
-- стратегии кеша:
-  - OpenAI: system = prefix (строка), user = variable
-  - OpenRouter: system.content = массив `[{ type: text, text: prefix, cache_control: { type: ephemeral } }]`
-  - Provod.ai: как OpenAI, без cache_control
-- `max_tokens` (совместимое поле), `temperature`, `model`
+- `ILlmProvider` как в [architecture.md](../architecture.md) — без резолвера по имени вендора
+- один HttpClient `llm`, `BaseAddress` из `Llm:BaseUrl` после мержа Local
+- POST `{BaseUrl}/chat/completions`, `Authorization: Bearer` из env
+- `CacheMode` из Local: `none` или `openrouter` (`cache_control` на префиксе)
+- `max_tokens`, `temperature`, `model`
 - таймаут HttpClient из Options
-- маппинг HTTP ошибок: 401/403 понятным текстом «ключ / провайдер», 429 — ретраимый
-- `LlmOptions.Providers` и профили моделей: `ContextWindowTokens`, `ReservedOutputTokens`
-- если модель не найдена в профилях — дефолтный профиль из Options, не магическое число в коде чанкера
-- unit-тесты сериализации тела запроса (мок `HttpMessageHandler`): OpenRouter содержит `cache_control`, OpenAI и Provod — нет; prefix не склеен с variable в одной роли без необходимости (system vs user)
-- Cli `--provider` / `--model` доходят до резолвера
+- HTTP 401/403 — «ключ / шлюз», 429 — ретраимый
+- unit-тесты сериализации (мок `HttpMessageHandler`): при `openrouter` есть `cache_control`, при `none` — нет; prefix в system, variable в user
+- `--model` перекрывает Local на запуск
 
-Имена провайдеров в CLI и конфиге: `openai`, `openrouter`, `provod`.
+Форма файла — [local-config.md](../local-config.md).
 
 ## Вне скоупа
 
-- Anthropic Messages API напрямую (только через OpenRouter chat completions + cache_control)
-- streaming
-- Responses API OpenAI
-- embeddings
-- учёт денег / биллинг-дашборд
-- Python SDK
+- три захардкоженных вендора в git
+- Anthropic Messages API напрямую
+- streaming, Responses API, embeddings
+- ключ в JSON
 - подбор модели «кто лучше переводит»
 
 ## Контракты
 
-```
-ILlmProviderResolver.Resolve(string providerName) -> ILlmProvider
-```
+Нет `ILlmProviderResolver`. Пайплайн получает `ILlmProvider` из DI.
 
-Неизвестный provider → ошибка до первого HTTP.
-
-Профили в `appsettings.json` (форма ориентир, ключи можно уточнить, но не размазывать по коду):
-
-```json
-{
-  "Llm": {
-    "DefaultProvider": "openrouter",
-    "DefaultModel": "anthropic/claude-sonnet-4",
-    "Providers": {
-      "openai": {
-        "BaseUrl": "https://api.openai.com/v1",
-        "ApiKeyEnvironmentVariable": "OPENAI_API_KEY"
-      },
-      "openrouter": {
-        "BaseUrl": "https://openrouter.ai/api/v1",
-        "ApiKeyEnvironmentVariable": "OPENROUTER_API_KEY"
-      },
-      "provod": {
-        "BaseUrl": "https://api.provod.ai/v1",
-        "ApiKeyEnvironmentVariable": "PROVOD_API_KEY"
-      }
-    },
-    "Models": {
-      "anthropic/claude-sonnet-4": { "ContextWindowTokens": 200000, "ReservedOutputTokens": 8000 },
-      "default": { "ContextWindowTokens": 128000, "ReservedOutputTokens": 8000 }
-    }
-  }
-}
-```
-
-Опциональные заголовки OpenRouter (`HTTP-Referer`, `X-Title`) — в Options, пустые по умолчанию.
+Нет `BaseUrl` / `Model` в committed `appsettings.json`.
 
 ## Критерии приёмки
 
-- смена `--provider provod` меняет BaseAddress/клиент, не ветвит `BookTranslationService`
-- нет `new HttpClient` в решении
-- ключ читается из env-имени из Options; пустой ключ — ошибка до запроса
-- тесты запроса не ходят в сеть
-- `CachedTokens` парсится из usage, если поле есть (`prompt_tokens_details.cached_tokens` или аналог OpenRouter), иначе null
+- нет `new HttpClient`
+- пустой ключ или нет Local/`BaseUrl` — ошибка до запроса, с отсылкой к example
+- тесты не ходят в сеть и не читают настоящий Local с машины агента как фикстуру (подкладывать тестовый JSON)
+- `CachedTokens` парсится из usage, если поле есть, иначе null
+- смена BaseUrl в тестовом Options меняет адрес клиента, не ветвит `BookTranslationService`
 
 ## Риски
 
-- Разные поля usage у шлюзов — парсер терпимый, пайплайн не падает.
-- Складывать prefix в user вместе с главой «для простоты» — сломает кеш OpenAI (префикс должен быть общим началом).
-- Keyed services вместо резолвера — отказ по [architecture.md](../architecture.md).
-- Логировать Bearer — запрещено.
+- Закоммитить заполненный Local — не должен пройти `.gitignore`
+- Склеить prefix с главой в одном user — ломает кеш
+- Логировать Bearer — запрещено
 
 ## Зависимости
 
-Эпоха 03 уже шлёт `LlmRequest`. Если 03 закрыта на одном адаптере, эта эпоха заменяет его резолвером и тремя стратегиями, не меняя пайплайн.
+Эпоха 03 уже шлёт `LlmRequest`. Эта эпоха подключает живой клиент к Local+env, не меняя пайплайн.

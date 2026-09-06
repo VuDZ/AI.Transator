@@ -11,7 +11,7 @@
 - полный корпус вселенной + рабочий словарь книги
 - перевод по главам/кускам со стабильным префиксом
 - ретраи по структуре ответа, чекпоинты, дырки с логом
-- три провайдера за одним контрактом: OpenAI, OpenRouter, Provod.ai
+- один OpenAI-compatible клиент; живые URL/модель только в локальном конфиге
 
 В v1 нет:
 
@@ -34,7 +34,7 @@ tests/Ai.Translator.Tests  — unit-тесты Core
 ```
 
 Cli тонкий: биндинг аргументов, резолв сервиса, печать ошибок, exit code.  
-Core толстый: словарь, EPUB, нарезка, пайплайн, провайдеры.
+Core толстый: словарь, EPUB, нарезка, пайплайн, LLM-клиент.
 
 Не создавать `Ai.Translator.Infrastructure`, `Ai.Translator.Domain` и прочие сборки «на вырост».
 
@@ -50,7 +50,7 @@ Core толстый: словарь, EPUB, нарезка, пайплайн, п�
 | `Epub` | чтение spine, замена XHTML в копии ZIP |
 | `Translation` | префикс, чанкер, валидатор, пайплайн, чекпоинты |
 | `Llm` | OpenAI-compatible клиент и стратегии кеша |
-| `Options` | `TranslatorOptions`, `LlmOptions`, профили моделей |
+| `Options` | `TranslatorOptions`, `LlmOptions` |
 
 ## Потоки
 
@@ -95,7 +95,7 @@ flowchart TD
 ai-translator glossary compile --corpus <md> --book <epub> --out <md>
 ai-translator glossary extract --original <epub> --translation <epub> --out <md>
 ai-translator translate --input <epub> --glossary <md> --out <epub>
-            [--provider <name>] [--model <id>] [--work-dir <path>] [--resume]
+            [--model <id>] [--work-dir <path>] [--resume]
 ```
 
 `glossary extract` появляется в эпохе 05. До этого команда может существовать как заглушка с понятной ошибкой «эпоха не реализована», либо отсутствовать — см. эпоху 00.
@@ -104,9 +104,8 @@ ai-translator translate --input <epub> --glossary <md> --out <epub>
 
 - Регистрация в одном месте: `ServiceCollectionExtensions` в Core, вызов из Cli Host.
 - Тяжёлые I/O-объекты не создаются через `new` в бизнес-логике. `HttpClient` — только из `IHttpClientFactory`.
-- Конфиг — `IOptions<TranslatorOptions>` и `IOptions<LlmOptions>`.
-- Провайдеры не keyed services. `ILlmProviderResolver.Resolve(string name)` читает `LlmOptions` и выдаёт адаптер.
-- Именованные HttpClient: `openai`, `openrouter`, `provod`. BaseAddress и Authorization настраиваются при регистрации.
+- Конфиг — `IOptions<TranslatorOptions>` и `IOptions<LlmOptions>`: json + `appsettings.Local.json` + env, см. [local-config.md](local-config.md).
+- Один `ILlmProvider`, один HttpClient `llm`. Без keyed DI и без резолвера по имени провайдера.
 - Время — `TimeProvider` (ретраи, задержки).
 - Логирование через `ILogger<T>`. Тела промптов с полным словарём в Information не писать.
 
@@ -133,11 +132,7 @@ LlmResponse
   CachedTokens
 ```
 
-Стратегия кеша — деталь `Llm`, не пайплайна:
-
-- OpenAI: `StablePrefix` первым system-сообщением, без спецполей
-- OpenRouter: то же + `cache_control: ephemeral` на префиксе (для Anthropic через шлюз)
-- Provod.ai: тот же OpenAI-compatible POST `/chat/completions`, без кеша = дороже, контракт тот же
+Стратегия кеша — поле `Llm:CacheMode` из Local (`none` | `openrouter`), не ветка пайплайна по имени вендора.
 
 Нарезка глав смотрит на `ContextWindowTokens` выбранной модели минус резерв под префикс и ответ. Оценка токенов в v1 — эвристика (длина/4), отдельный tokenizer не тащим.
 
@@ -152,7 +147,7 @@ LlmResponse
 
 Рабочая директория перевода (по умолчанию рядом с `--out` или явный `--work-dir`):
 
-- `state.json` — вход, выход, провайдер, модель, хеш префикса, статусы чанков
+- `state.json` — вход, выход, модель, хеш префикса, статусы чанков
 - файлы исходного и переведённого чанка
 - лог ошибки чанка после исчерпания ретраев
 

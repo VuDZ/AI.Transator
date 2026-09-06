@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Архитектурный надзор
 
-Контракт: `docs/README.md`, `docs/architecture.md`, `docs/stack.md`, `docs/glossary-format.md`.
+Контракт: `docs/README.md`, `docs/architecture.md`, `docs/stack.md`, `docs/local-config.md`, `docs/glossary-format.md`.
 Реализация — строго текущая эпоха из `docs/epochs/`. Backlog не тащить в v1.
 
 - три проекта: Cli, Core, Tests. Четвёртый не добавлять
@@ -14,6 +14,6 @@ alwaysApply: true
 - префикс перевода стабилен на книгу; словарь не резать на чанк
 - PDF на входе — отказ, не парсер
 - `IHttpClientFactory`, `IOptions<T>`, без keyed DI, без `new HttpClient`
-- провайдеры: `openai` / `openrouter` / `provod` через `ILlmProviderResolver`
+- один OpenAI-compatible `ILlmProvider`; URL/модель в `appsettings.Local.json`, ключ в env
 
 Проверка диффа: не расходится ли с epoch-файлом и форматом словаря. Расходится — спросить или сначала поправить docs.

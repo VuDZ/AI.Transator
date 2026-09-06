@@ -45,7 +45,7 @@
 ```
 ai-translator glossary extract --original <epub> --translation <epub> --out <md>
     [--merge-into <corpus.md>]
-    [--provider <name>] [--model <id>]
+    [--model <id>]
 ```
 
 ```
