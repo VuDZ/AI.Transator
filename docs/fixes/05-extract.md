@@ -1,6 +1,6 @@
 # Правки после эпохи 05
 
-Статус: **принята с замечанием**. 86 тестов зелёные. `glossary extract` больше не заглушка: пары по индексу spine, другой prefix (`prompts/extract-system.md`), `IGlossaryMerger` не затирает `ru`, тот же `ILlmProvider`.
+Статус: **пункт 1 закрыт**. 86 тестов зелёные на сдаче эпохи. `glossary extract` больше не заглушка: пары по индексу spine, другой prefix (`prompts/extract-system.md`), `IGlossaryMerger` не затирает `ru`, тот же `ILlmProvider`.
 
 Сошлось с контрактом:
 
@@ -13,7 +13,7 @@
 
 ## Замечание
 
-1. **Дубль правил extract.** Канон — [`prompts/extract-system.md`](../../prompts/extract-system.md) (Cli копирует в output). `ExtractRulesLoader.FallbackRules` держит полный текст в C#. Как в 03 после правки: fallback короткий или пустой, не вторая копия промпта.
+1. **Дубль правил extract.** Канон — [`prompts/extract-system.md`](../../prompts/extract-system.md) (Cli копирует в output). `ExtractRulesLoader` читает файл; если его нет — пустая строка. Текст промпта в C# не дублируется.
 
 ## Не дефект 05
 

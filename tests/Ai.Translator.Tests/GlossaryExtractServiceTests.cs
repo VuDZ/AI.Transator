@@ -46,7 +46,13 @@ public sealed class GlossaryExtractServiceTests
                 Chapter("OEBPS/chapter1.xhtml", "Библиарий приветствовал Адептус Астартес."));
             var epub = CombineEpub(originalEpub, translationEpub);
 
-            var service = CreateService(llm.Object, epub.Object);
+            var promptRoot = Path.Combine(root, "prompt-home");
+            Directory.CreateDirectory(Path.Combine(promptRoot, "prompts"));
+            await File.WriteAllTextAsync(
+                Path.Combine(promptRoot, "prompts", "extract-system.md"),
+                "You are a glossary extractor, not a translator.\n");
+
+            var service = CreateService(llm.Object, epub.Object, new ExtractRulesLoader(promptRoot));
             await service.ExtractAsync(
                 originalPath,
                 translationPath,
@@ -240,18 +246,22 @@ public sealed class GlossaryExtractServiceTests
                 || p.ParameterType == typeof(IGlossaryExtractService));
     }
 
-    private static GlossaryExtractService CreateService(ILlmProvider llm, IEpubBookService epub)
+    private static GlossaryExtractService CreateService(
+        ILlmProvider llm,
+        IEpubBookService epub,
+        ExtractRulesLoader? extractRules = null)
     {
         return new GlossaryExtractService(
             epub,
             new GlossaryParser(),
             new GlossaryWriter(),
-            CreateExtractor(llm));
+            CreateExtractor(llm, extractRules: extractRules));
     }
 
     private static GlossaryExtractor CreateExtractor(
         ILlmProvider llm,
-        ILogger<GlossaryExtractor>? logger = null)
+        ILogger<GlossaryExtractor>? logger = null,
+        ExtractRulesLoader? extractRules = null)
     {
         return new GlossaryExtractor(
             llm,
@@ -259,7 +269,7 @@ public sealed class GlossaryExtractServiceTests
             new GlossaryWriter(),
             new GlossaryMerger(),
             new LengthTokenEstimator(),
-            new ExtractRulesLoader(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))),
+            extractRules ?? new ExtractRulesLoader(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))),
             Options.Create(new TranslatorOptions { Temperature = 0.1 }),
             Options.Create(new LlmOptions
             {
