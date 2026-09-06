@@ -57,6 +57,12 @@ public sealed class GlossaryCompileService : IGlossaryCompileService
 
         var markdown = await File.ReadAllTextAsync(corpusPath, cancellationToken).ConfigureAwait(false);
         var corpus = _parser.Parse(markdown);
+        if (corpus.Entries.Count == 0)
+        {
+            throw new GlossaryFormatException(
+                "Corpus Markdown is invalid: no glossary entries (## headings).");
+        }
+
         var bookPlainText = await _bookTextExtractor
             .ExtractPlainTextAsync(bookPath, cancellationToken)
             .ConfigureAwait(false);

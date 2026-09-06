@@ -97,12 +97,6 @@ public sealed class GlossaryParser : IGlossaryParser
 
         FlushEntry(entries, currentEnglish, currentFields);
 
-        if (entries.Count == 0)
-        {
-            throw new GlossaryFormatException(
-                "Corpus Markdown is invalid: no glossary entries (## headings).");
-        }
-
         if (string.IsNullOrWhiteSpace(title))
         {
             throw new GlossaryFormatException("Corpus Markdown is invalid: missing document title (# heading).");
@@ -115,7 +109,6 @@ public sealed class GlossaryParser : IGlossaryParser
             Entries = entries
         };
     }
-
     private static void FlushEntry(
         List<GlossaryEntry> entries,
         string? english,

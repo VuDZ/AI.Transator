@@ -74,11 +74,34 @@ public sealed class GlossaryRoundTripTests
     }
 
     [Fact]
-    public void Parse_MissingEntryHeadings_Throws()
+    public void ParseWriteParse_EmptyWorkingGlossary_PreservesTitleAndPreamble()
+    {
+        const string markdown =
+            """
+            # Warhammer 40k
+
+            Preamble: keep this.
+            """;
+
+        var parser = new GlossaryParser();
+        var writer = new GlossaryWriter();
+        var first = parser.Parse(markdown);
+        Assert.Empty(first.Entries);
+        Assert.Equal("Warhammer 40k", first.Title);
+        Assert.Equal("Preamble: keep this.", first.Preamble);
+
+        var second = parser.Parse(writer.Write(first));
+        Assert.Equal(first.Title, second.Title);
+        Assert.Equal(first.Preamble, second.Preamble);
+        Assert.Empty(second.Entries);
+    }
+
+    [Fact]
+    public void Parse_MissingTitle_Throws()
     {
         var parser = new GlossaryParser();
-        var ex = Assert.Throws<GlossaryFormatException>(() => parser.Parse("# Title\n\nOnly preamble.\n"));
-        Assert.Contains("## headings", ex.Message, StringComparison.Ordinal);
+        var ex = Assert.Throws<GlossaryFormatException>(() => parser.Parse("Only preamble.\n"));
+        Assert.Contains("# heading", ex.Message, StringComparison.Ordinal);
     }
 
     private static void AssertDocumentsEqual(GlossaryDocument expected, GlossaryDocument actual)

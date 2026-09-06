@@ -63,6 +63,11 @@ public sealed class GlossaryCompilerTests
         var compiler = new GlossaryCompiler();
         var working = compiler.Compile(Corpus, "Chaptersomething arrived.");
         Assert.Empty(working.Entries);
+
+        var parsed = new GlossaryParser().Parse(new GlossaryWriter().Write(working));
+        Assert.Equal(Corpus.Title, parsed.Title);
+        Assert.Equal(Corpus.Preamble, parsed.Preamble);
+        Assert.Empty(parsed.Entries);
     }
 
     [Fact]
