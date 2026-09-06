@@ -14,6 +14,6 @@ alwaysApply: true
 - префикс перевода стабилен на книгу; словарь не резать на чанк
 - PDF на входе — отказ, не парсер
 - `IHttpClientFactory`, `IOptions<T>`, без keyed DI, без `new HttpClient`
-- один OpenAI-compatible `ILlmProvider`; URL/модель в `appsettings.Local.json`, ключ в env
+- один `ILlmProvider`: нестриминговый Chat Completions; BaseUrl/Model/ApiKey в `appsettings.Local.json`
 
 Проверка диффа: не расходится ли с epoch-файлом и форматом словаря. Расходится — спросить или сначала поправить docs.

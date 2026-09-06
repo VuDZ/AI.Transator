@@ -25,7 +25,7 @@
 - SDK .NET 10, TFM `net10.0`
 - пакеты Host / Options / Http / System.CommandLine в Cli; Core пока может ссылаться на Options и Abstractions
 - `TranslatorOptions`: `TargetLanguage = "ru"`, `MaxRetries`, `Temperature`
-- `LlmOptions` как в [local-config.md](../local-config.md): BaseUrl/Model из Local, ключ из env
+- `LlmOptions` как в [local-config.md](../local-config.md): BaseUrl, Model, ApiKey из Local
 - Host: `AddJsonFile("appsettings.Local.json", optional: true)`
 - один именованный HttpClient `llm`, даже если ещё никто не вызывает LLM
 - корневая команда `ai-translator` (AssemblyName)
@@ -64,7 +64,7 @@ ai-translator translate --input <path> --glossary <path> --out <path>
 
 Регистрация: `AddTranslator(IServiceCollection, IConfiguration)` в Core.
 
-Секреты: ключ только env. URL и модель — [local-config.md](../local-config.md).
+Секреты: `ApiKey` только в Local.json, см. [local-config.md](../local-config.md).
 
 ## Критерии приёмки
 

@@ -111,17 +111,21 @@ ai-translator translate --input <epub> --glossary <md> --out <epub>
 
 ## Контракт LLM
 
-Один порт на всех провайдеров:
+Единственный способ звать модель в v1: **нестриминговый Chat Completions**.
+`POST {BaseUrl}/chat/completions`, `stream: false`.
+System = `StablePrefix`, user = `VariableContent`.
+Ответ целиком: `choices[0].message.content` + `finish_reason` + usage.
+
+Не делаем: Responses API, Anthropic Messages, legacy Completions, streaming, batch.
 
 ```
 ILlmProvider
-  Name: string
   CompleteAsync(LlmRequest, CancellationToken) -> LlmResponse
 
 LlmRequest
   Model
-  StablePrefix      // кешируемая неизменяемая часть
-  VariableContent   // чанк / пара глав для extract
+  StablePrefix
+  VariableContent
   MaxOutputTokens
   Temperature
 
@@ -132,9 +136,8 @@ LlmResponse
   CachedTokens
 ```
 
-Стратегия кеша — поле `Llm:CacheMode` из Local (`none` | `openrouter`), не ветка пайплайна по имени вендора.
-
-Нарезка глав смотрит на `ContextWindowTokens` выбранной модели минус резерв под префикс и ответ. Оценка токенов в v1 — эвристика (длина/4), отдельный tokenizer не тащим.
+Кеш — `Llm:CacheMode` из Local (`none` | `openrouter`), не ветка пайплайна.
+Нарезка: `ContextWindowTokens` минус префикс и резерв ответа. Оценка токенов: length/4.
 
 ## EPUB
 

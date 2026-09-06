@@ -51,7 +51,7 @@ Python быстрее для промптов и парсинга вики. Зд
 
 ## Доступ к модели
 
-Один OpenAI-compatible endpoint. `BaseUrl` и `Model` — в `appsettings.Local.json`, не в git. Ключ — в env `TRANSLATOR_API_KEY` (имя можно переопределить в Local). Подробности: [local-config.md](local-config.md).
+Один OpenAI-compatible endpoint, вызов только **Chat Completions без стрима**. `BaseUrl`, `Model`, `ApiKey` — в `appsettings.Local.json`. Подробности: [local-config.md](local-config.md).
 
 В `appsettings.json` нет URL, модели и ключа.
 

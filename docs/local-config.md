@@ -1,25 +1,23 @@
 # Локальный доступ к модели
 
-Один OpenAI-compatible шлюз (Provod.ai, OpenRouter, свой прокси). URL и имя модели — только на этой машине. Ключ — только в env. В git этого нет.
+Один OpenAI-compatible шлюз (Provod.ai, OpenRouter, свой прокси). BaseUrl, Model и ApiKey лежат в `appsettings.Local.json` на этой машине. В git файла нет.
 
 ## Файлы
 
 | Файл | Git | Назначение |
 | --- | --- | --- |
 | `src/Ai.Translator.Cli/appsettings.json` | да | язык, ретраи, температура. Без URL, модели и ключа |
-| `src/Ai.Translator.Cli/appsettings.Local.json.example` | да | пустой образец формы |
-| `src/Ai.Translator.Cli/appsettings.Local.json` | нет | твой BaseUrl и Model |
+| `src/Ai.Translator.Cli/appsettings.Local.json.example` | да | образец с пустым `ApiKey` |
+| `src/Ai.Translator.Cli/appsettings.Local.json` | нет | BaseUrl, Model, ApiKey |
 
-`.gitignore` содержит `appsettings.Local.json` и `**/appsettings.Local.json`.
-
-Образец (значения выдуманные, не канон провайдера):
+`.gitignore`: `appsettings.Local.json`, `**/appsettings.Local.json`.
 
 ```json
 {
   "Llm": {
     "BaseUrl": "https://api.provod.ai/v1",
     "Model": "openai/gpt-5.4",
-    "ApiKeyEnvironmentVariable": "TRANSLATOR_API_KEY",
+    "ApiKey": "sk-...",
     "ContextWindowTokens": 128000,
     "ReservedOutputTokens": 8000,
     "CacheMode": "none"
@@ -27,24 +25,24 @@
 }
 ```
 
-`CacheMode`: `none` (Provod и прочие без кеша) или `openrouter` (явный `cache_control` на префиксе). Для обычного OpenAI достаточно `none`: одинаковый system-префикс кешируется шлюзом сам.
+`CacheMode`: `none` или `openrouter` (явный `cache_control` на префиксе).
 
-Ключ в JSON не класть. Значение берётся из env с именем `ApiKeyEnvironmentVariable` (по умолчанию `TRANSLATOR_API_KEY`).
+Ключ в example — пустая строка. В настоящем Local — боевой ключ. Не логировать `ApiKey` и заголовок Authorization.
 
-## Как подхватывается при сборке и запуске
+## Как подхватывается
 
-Host читает, в таком порядке (последний побеждает):
+Host, последний побеждает:
 
 1. `appsettings.json`
 2. `appsettings.Local.json` (`optional: true`)
-3. переменные окружения
+3. env (не обязателен; не заставляем выставлять ключ вручную)
 
-`appsettings.Local.json` лежит рядом с csproj **и** копируется в output (`PreserveNewest`). `dotnet run` берёт файл из проекта (ContentRoot). Запуск exe из `bin/` берёт копию из output. Пересобрал — снова актуальный Local, если менял файл в проекте.
+Local лежит рядом с csproj и копируется в output (`PreserveNewest`). `dotnet run` читает из проекта. Запуск из `bin/` — копия из output.
 
-Нет файла, пустой `BaseUrl` или пустой ключ в env — ошибка до HTTP, с текстом что создать Local из example и выставить переменную.
+Нет файла, пустой `BaseUrl` или пустой `ApiKey` — ошибка до HTTP: скопируй example в `appsettings.Local.json` и заполни.
 
-`--model` в CLI перекрывает `Llm:Model` на один запуск. Флага `--provider` нет.
+`--model` перекрывает `Llm:Model` на один запуск. Флага `--provider` нет.
 
 ## HttpClient
 
-Один именованный клиент `llm`. `BaseAddress` и таймаут из Options после мержа Local. Не три клиента и не keyed DI.
+Один клиент `llm`. `BaseAddress` из Options. Bearer из `Llm:ApiKey` при регистрации клиента (не из env).

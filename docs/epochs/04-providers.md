@@ -2,7 +2,7 @@
 
 ## Цель
 
-Один OpenAI-compatible клиент. URL и модель — из локального файла, ключ — из env. Пайплайн по-прежнему отдаёт `StablePrefix` + `VariableContent`. Нарезка смотрит на окно из Local.
+Один OpenAI-compatible клиент на **нестриминговом Chat Completions**. URL, модель и ключ — из `appsettings.Local.json`. Пайплайн отдаёт `StablePrefix` + `VariableContent`. Нарезка смотрит на окно из Local.
 
 ## Вход / выход
 
@@ -14,7 +14,7 @@
 
 - `ILlmProvider` как в [architecture.md](../architecture.md) — без резолвера по имени вендора
 - один HttpClient `llm`, `BaseAddress` из `Llm:BaseUrl` после мержа Local
-- POST `{BaseUrl}/chat/completions`, `Authorization: Bearer` из env
+- POST `{BaseUrl}/chat/completions`, `stream: false`, `Authorization: Bearer` из `Llm:ApiKey`
 - `CacheMode` из Local: `none` или `openrouter` (`cache_control` на префиксе)
 - `max_tokens`, `temperature`, `model`
 - таймаут HttpClient из Options
@@ -27,16 +27,15 @@
 ## Вне скоупа
 
 - три захардкоженных вендора в git
-- Anthropic Messages API напрямую
-- streaming, Responses API, embeddings
-- ключ в JSON
+- Responses API, Anthropic Messages, streaming, embeddings
+- ключ в committed json или обязательный env
 - подбор модели «кто лучше переводит»
 
 ## Контракты
 
 Нет `ILlmProviderResolver`. Пайплайн получает `ILlmProvider` из DI.
 
-Нет `BaseUrl` / `Model` в committed `appsettings.json`.
+Нет `BaseUrl` / `Model` / `ApiKey` в committed `appsettings.json`. Example содержит пустой `ApiKey`.
 
 ## Критерии приёмки
 
@@ -54,4 +53,4 @@
 
 ## Зависимости
 
-Эпоха 03 уже шлёт `LlmRequest`. Эта эпоха подключает живой клиент к Local+env, не меняя пайплайн.
+Эпоха 03 уже шлёт `LlmRequest`. Эта эпоха подключает живой Chat Completions к Local, не меняя пайплайн.

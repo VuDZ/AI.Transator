@@ -20,7 +20,7 @@
 
 1. [stack.md](stack.md) — почему .NET 10, где Python, какие пакеты.
 2. [architecture.md](architecture.md) — проекты, слои, потоки, DI, границы MVP.
-3. [local-config.md](local-config.md) — BaseUrl и модель локально, ключ в env.
+3. [local-config.md](local-config.md) — BaseUrl, модель и ключ локально.
 4. [glossary-format.md](glossary-format.md) — канон Markdown-словаря.
 5. Эпохи по порядку: следующая не начинается, пока предыдущая не закрыта по критериям приёмки.
 6. [backlog.md](backlog.md) — сознательно отложенное. Это не скоуп v1.
