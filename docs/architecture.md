@@ -95,6 +95,7 @@ flowchart TD
 ai-translator glossary compile --corpus <md> --book <epub> --out <md>
 ai-translator glossary extract --original <epub> --translation <epub> --out <md>
             [--merge-into <corpus.md>] [--model <id>]
+ai-translator glossary extract --original <epub> --translation <epub> --list-pairs
 ai-translator translate --input <epub> --glossary <md> --out <epub>
             [--model <id>] [--work-dir <path>] [--resume]
             [--chapters <n>|<from>-<to>]
@@ -105,6 +106,8 @@ ai-translator translate --input <epub> --glossary <md> --out <epub>
 Выход всегда полный EPUB: выбранные главы переведены, остальные скопированы с оригинала. Нужно, чтобы проверять пайплайн на куске, не гоняя 400 страниц.
 
 `glossary extract` пишет предложенный MD в `--out`. `--merge-into` подмешивает записи в существующий корпус по правилам [glossary-format.md](glossary-format.md) (канонический `ru` не затирается); тот же путь, что `--out`, — запись in-place.
+
+`--list-pairs` (эпоха 06): только печать kept-пар в stdout, без LLM и без `--out`. Extract по-прежнему парует индекс к индексу; role-таблица — превью, не вход пайплайна.
 
 ## DI и конфигурация
 

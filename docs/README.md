@@ -37,6 +37,7 @@
 | [epochs/03-translation.md](epochs/03-translation.md) | Префикс, чанки, ретраи, чекпоинты, кандидаты терминов |
 | [epochs/04-providers.md](epochs/04-providers.md) | OpenAI / OpenRouter / Provod.ai за одним контрактом |
 | [epochs/05-extract.md](epochs/05-extract.md) | Наполнение корпуса из пары оригинал+перевод |
+| [epochs/06-extract-list-pairs.md](epochs/06-extract-list-pairs.md) | Печать пар глав extract без LLM (spine + превью ролей) |
 
 ## Шаблон эпохи
 
