@@ -85,6 +85,7 @@ public sealed class DependencyInjectionTests
         Assert.NotNull(provider.GetRequiredService<IBookTranslationService>());
         Assert.IsType<GlossaryExtractor>(provider.GetRequiredService<IGlossaryExtractor>());
         Assert.NotNull(provider.GetRequiredService<IGlossaryExtractService>());
+        Assert.IsType<GlossaryPairPreview>(provider.GetRequiredService<IGlossaryPairPreview>());
         Assert.NotNull(provider.GetRequiredService<TimeProvider>());
     }
 

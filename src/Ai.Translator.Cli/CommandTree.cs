@@ -100,10 +100,9 @@ internal static class CommandTree
             Description = "Existing translation EPUB path.",
             Required = true
         };
-        var outOption = new Option<string>("--out")
+        var outOption = new Option<string?>("--out")
         {
-            Description = "Extracted glossary Markdown output path.",
-            Required = true
+            Description = "Extracted glossary Markdown output path. Required unless --list-pairs is set."
         };
         var mergeIntoOption = new Option<string?>("--merge-into")
         {
@@ -113,6 +112,10 @@ internal static class CommandTree
         {
             Description = "Override Llm:Model for this run."
         };
+        var listPairsOption = new Option<bool>("--list-pairs")
+        {
+            Description = "Print kept spine pairs and suggested role pairs to stdout without calling the model."
+        };
 
         var extract = new Command("extract", "Extract glossary candidates from an original and its translation.")
         {
@@ -120,12 +123,24 @@ internal static class CommandTree
             translationOption,
             outOption,
             mergeIntoOption,
-            modelOption
+            modelOption,
+            listPairsOption
         };
 
         extract.SetAction(async (parseResult, cancellationToken) =>
         {
             ArgumentNullException.ThrowIfNull(services);
+
+            var listPairs = parseResult.GetValue(listPairsOption);
+            var output = parseResult.GetValue(outOption);
+            var mergeInto = parseResult.GetValue(mergeIntoOption);
+            var model = parseResult.GetValue(modelOption);
+            if (GlossaryExtractArguments.HasListPairsConflict(listPairs, output, mergeInto, model))
+            {
+                parseResult.InvocationConfiguration.Error.WriteLine(
+                    GlossaryExtractArguments.ListPairsConflictMessage);
+                return 1;
+            }
 
             var original = parseResult.GetValue(originalOption);
             var translation = parseResult.GetValue(translationOption);
@@ -141,8 +156,7 @@ internal static class CommandTree
                 return 1;
             }
 
-            var output = parseResult.GetValue(outOption);
-            if (original is null || translation is null || output is null)
+            if (original is null || translation is null)
             {
                 parseResult.InvocationConfiguration.Error.WriteLine("Missing required argument.");
                 return 1;
@@ -150,13 +164,30 @@ internal static class CommandTree
 
             try
             {
+                if (listPairs)
+                {
+                    var epub = services.GetRequiredService<IEpubBookService>();
+                    var previewer = services.GetRequiredService<IGlossaryPairPreview>();
+                    var originalBook = await epub.OpenAsync(original, cancellationToken);
+                    var translationBook = await epub.OpenAsync(translation, cancellationToken);
+                    var preview = previewer.Preview(originalBook, translationBook);
+                    parseResult.InvocationConfiguration.Output.Write(PairPreviewFormatter.Format(preview));
+                    return 0;
+                }
+
+                if (string.IsNullOrWhiteSpace(output))
+                {
+                    parseResult.InvocationConfiguration.Error.WriteLine("Missing required argument.");
+                    return 1;
+                }
+
                 var extractService = services.GetRequiredService<IGlossaryExtractService>();
                 await extractService.ExtractAsync(
                     original,
                     translation,
                     output,
-                    parseResult.GetValue(mergeIntoOption),
-                    parseResult.GetValue(modelOption),
+                    mergeInto,
+                    model,
                     cancellationToken);
                 return 0;
             }

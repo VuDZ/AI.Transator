@@ -1,4 +1,5 @@
-using HtmlAgilityPack;
+﻿using HtmlAgilityPack;
+using System.Text;
 
 namespace Ai.Translator.Core.Epub;
 
@@ -8,6 +9,64 @@ internal static class XhtmlChapterParser
     {
         "p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "li"
     };
+
+    public static string? GetFirstHeadingText(string xhtml)
+    {
+        ArgumentNullException.ThrowIfNull(xhtml);
+        if (xhtml.Length == 0)
+        {
+            return null;
+        }
+
+        var document = Load(xhtml);
+        var body = FindBody(document);
+        var root = body ?? document.DocumentNode;
+        foreach (var node in root.Descendants())
+        {
+            if (node.NodeType != HtmlNodeType.Element)
+            {
+                continue;
+            }
+
+            if (node.Name is not ("h1" or "h2" or "h3" or "h4" or "h5" or "h6"))
+            {
+                continue;
+            }
+
+            var text = CollapseWhitespace(HtmlEntity.DeEntitize(node.InnerText));
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        return null;
+    }
+
+    public static string CollapseWhitespace(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        var builder = new StringBuilder(text.Length);
+        var previousWasSpace = true;
+        foreach (var c in text)
+        {
+            if (char.IsWhiteSpace(c))
+            {
+                if (!previousWasSpace)
+                {
+                    builder.Append(' ');
+                    previousWasSpace = true;
+                }
+            }
+            else
+            {
+                builder.Append(c);
+                previousWasSpace = false;
+            }
+        }
+
+        return builder.ToString().Trim();
+    }
 
     public static string GetBodyInnerHtml(string xhtml)
     {

@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Ai.Translator.Cli\Ai.Translator.Cli.csproj" />
     <ProjectReference Include="..\..\src\Ai.Translator.Core\Ai.Translator.Core.csproj" />
   </ItemGroup>
 

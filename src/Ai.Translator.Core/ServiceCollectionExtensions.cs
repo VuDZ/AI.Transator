@@ -64,6 +64,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IBookTranslationService, BookTranslationService>();
         services.AddSingleton<IGlossaryExtractor, GlossaryExtractor>();
         services.AddSingleton<IGlossaryExtractService, GlossaryExtractService>();
+        services.AddSingleton<IGlossaryPairPreview, GlossaryPairPreview>();
 
         return services;
     }
