@@ -1,17 +1,11 @@
 # Правки после эпохи 01
 
-Статус: **пункт 1 закрыт**. Пункт 2 — в эпохе 02. Compile без LLM, матчер (`anti-Astartes` / `Astartes'` / `Astartes’` / не `Chaptersomething`), round-trip полей, порядок корпуса, CLI пишет `--out`.
+Статус: **пункт 1 закрыт** (проверено). Пункт 2 — в эпохе 02.
 
 ## Закрыто
 
-1. **Пустой рабочий словарь читается обратно.** Парсер принимает документ без `##` (заголовок + преамбула). Compile полного корпуса без записей по-прежнему ошибка (`no glossary entries`). Если в книге ничего не сошлось, `--out` пишется и `Parse` его открывает. См. [glossary-format.md](../glossary-format.md).
+1. Парсер читает рабочий MD без `##` (заголовок + преамбула), write→parse пустой. Compile корпуса без записей по-прежнему `GlossaryFormatException` в `GlossaryCompileService`.
 
 ## До эпохи 02
 
-2. **Поглотить `IBookTextExtractor`.** Временный порт на VersOne + `XhtmlToPlainText` (HAP). Не заводить второй способ достать plain text. `IEpubBookService` должен переиспользовать этот разбор.
-
-## Не дефект 01
-
-- `glossary extract` остаётся заглушкой.
-- HtmlAgilityPack в 01 — нужен для текста из XHTML, не четвёртый проект.
-- Неизвестный `type` становится `other` без лога; неизвестные ключи логируются — по формату достаточно.
+2. **Поглотить `IBookTextExtractor`.** Не заводить второй plain text. `IEpubBookService` переиспользует VersOne + `XhtmlToPlainText`.
