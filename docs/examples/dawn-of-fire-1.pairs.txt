@@ -1,7 +1,7 @@
 # Dawn of Fire 1 — Avenging Son (Guy Haley)
 # EN: DawnOfFire_1_en.epub (Black Library)
 # RU: DawnOfFire_1_ru.epub (фанперевод)
-# Пути — из `glossary extract --list-pairs`. Extract пока этот файл не читает.
+# Пути — из `glossary extract --list-pairs`. С `--pairs` этот файл читает эпоха 07.
 #
 # Две точечные пары (плотный словарь) + блок глав 1–40.
 # Не входит: Backlist, TOC, Map, Extract, Legal, Architects, Notes.

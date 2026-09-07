@@ -94,7 +94,7 @@ flowchart TD
 ```
 ai-translator glossary compile --corpus <md> --book <epub> --out <md>
 ai-translator glossary extract --original <epub> --translation <epub> --out <md>
-            [--merge-into <corpus.md>] [--model <id>]
+            [--merge-into <corpus.md>] [--model <id>] [--pairs <file>]
 ai-translator glossary extract --original <epub> --translation <epub> --list-pairs
 ai-translator translate --input <epub> --glossary <md> --out <epub>
             [--model <id>] [--work-dir <path>] [--resume]
@@ -107,7 +107,9 @@ ai-translator translate --input <epub> --glossary <md> --out <epub>
 
 `glossary extract` пишет предложенный MD в `--out`. `--merge-into` подмешивает записи в существующий корпус по правилам [glossary-format.md](glossary-format.md) (канонический `ru` не затирается); тот же путь, что `--out`, — запись in-place.
 
-`--list-pairs` (эпоха 06): только печать kept-пар в stdout, без LLM и без `--out`. Extract по-прежнему парует индекс к индексу; role-таблица — превью, не вход пайплайна.
+`--list-pairs` (эпоха 06): только печать kept-пар в stdout, без LLM и без `--out`. Role-таблица — превью, не вход пайплайна.
+
+`--pairs` (эпоха 07): пары из [extract-pairs.md](extract-pairs.md). Без флага — индекс к индексу. С флагом — только mapping; главы вне файла в модель не идут. Не сочетать с `--list-pairs`.
 
 ## DI и конфигурация
 

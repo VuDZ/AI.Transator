@@ -24,7 +24,7 @@
 3. [local-config.md](local-config.md) — BaseUrl, модель и ключ локально.
 4. [glossary-format.md](glossary-format.md) — канон Markdown-словаря.
 5. [`prompts/translate-system.md`](../prompts/translate-system.md) — общие правила перевода (слой 1 префикса).
-6. [extract-pairs.md](extract-pairs.md) — mapping глав для extract (пока только формат, CLI не читает).
+6. [extract-pairs.md](extract-pairs.md) — mapping глав для extract `--pairs`.
 7. Эпохи по порядку: следующая не начинается, пока предыдущая не закрыта по критериям приёмки.
 8. [backlog.md](backlog.md) — сознательно отложенное. Это не скоуп v1.
 
@@ -39,6 +39,7 @@
 | [epochs/04-providers.md](epochs/04-providers.md) | OpenAI / OpenRouter / Provod.ai за одним контрактом |
 | [epochs/05-extract.md](epochs/05-extract.md) | Наполнение корпуса из пары оригинал+перевод |
 | [epochs/06-extract-list-pairs.md](epochs/06-extract-list-pairs.md) | Печать пар глав extract без LLM (spine + превью ролей) |
+| [epochs/07-extract-pairs.md](epochs/07-extract-pairs.md) | extract --pairs: mapping-файл вместо индекса spine |
 
 ## Шаблон эпохи
 

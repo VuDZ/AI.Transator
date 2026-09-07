@@ -1,6 +1,6 @@
 # Mapping-файл для glossary extract
 
-Канон будущего `--pairs`. **Код ещё не читает этот файл.** Extract пока парует kept-индекс к индексу. Человек пишет mapping после `--list-pairs`.
+Канон `--pairs` (эпоха 07). Без флага extract парует kept-индекс к индексу. Человек пишет mapping после `--list-pairs`.
 
 Это не словарь и не JSON. Один файл на пару книг.
 
@@ -32,12 +32,12 @@ OEBPS/08-40k-Content.xhtml .. OEBPS/08-40k-Content-39.xhtml = OEBPS/Text/Section
 - один и тот же путь нельзя указать дважды
 - нет глобов, regex, индексов `--chapters` и YAML
 
-## Когда появится CLI
+## CLI
 
 ```
 ai-translator glossary extract --original <epub> --translation <epub> --out <md> --pairs <file>
 ```
 
-Без `--pairs` — как сейчас (i к i). `--pairs` и spine-индекс одновременно не смешивать.
+Без `--pairs` — i к i (эпоха 05). С `--pairs` — только строки файла. Не смешивать с `--list-pairs`.
 
 Пример для Dawn of Fire 1: [examples/dawn-of-fire-1.pairs.txt](examples/dawn-of-fire-1.pairs.txt).
