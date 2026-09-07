@@ -111,6 +111,8 @@ ai-translator translate --input <epub> --glossary <md> --out <epub>
 
 `--pairs` (эпоха 07): пары из [extract-pairs.md](extract-pairs.md). Без флага — индекс к индексу. С флагом — только mapping; главы вне файла в модель не идут. `--max-pairs N` — первые N пар после разворота файла (проверка без 40 глав). Не сочетать с `--list-pairs`. Не `--chapters` на extract.
 
+Прогресс LLM (эпоха 09): бар и usage на **stderr**. `Spectre.Console` только в Cli. Core шлёт шаги в `IRunProgress`. Категории `HttpClient` / `HttpClient.llm` — Warning, не Information.
+
 ## DI и конфигурация
 
 - Регистрация в одном месте: `ServiceCollectionExtensions` в Core, вызов из Cli Host.

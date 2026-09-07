@@ -27,6 +27,7 @@ Python быстрее для промптов и парсинга вики. Зд
 | Пакет | Где | Зачем |
 | --- | --- | --- |
 | `System.CommandLine` | Cli | Команды и help |
+| `Spectre.Console` | Cli | Прогресс-бар и таблица usage (эпоха 09). Не в Core |
 | `Microsoft.Extensions.Hosting` | Cli | Generic Host, DI, конфиг, логи |
 | `Microsoft.Extensions.Options` | Core / Cli | `IOptions<T>` |
 | `Microsoft.Extensions.Http` | Core / Cli | `IHttpClientFactory` |
