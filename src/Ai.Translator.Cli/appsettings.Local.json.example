@@ -6,6 +6,7 @@
     "ContextWindowTokens": 128000,
     "ReservedOutputTokens": 8000,
     "TimeoutSeconds": 300,
-    "CacheMode": "none"
+    "CacheMode": "none",
+    "SendTemperature": false
   }
 }

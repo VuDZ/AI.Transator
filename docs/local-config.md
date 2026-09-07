@@ -21,12 +21,15 @@
     "ContextWindowTokens": 128000,
     "ReservedOutputTokens": 8000,
     "TimeoutSeconds": 300,
-    "CacheMode": "none"
+    "CacheMode": "none",
+    "SendTemperature": false
   }
 }
 ```
 
 `CacheMode`: `none` или `openrouter` (явный `cache_control` на префиксе).
+
+`SendTemperature`: `false` или нет поля — в Chat Completions нет `temperature`. `true` — слать `Translator:Temperature`. На Provod/GPT-5 значение `0.3` даёт 503 (эпоха 08).
 
 `TimeoutSeconds` — лимит одного нестримингового запроса (дефолт 300). Дефолт `HttpClient` 100 с обрывает длинную главу. 504 — ретраимый, не повод включать streaming.
 

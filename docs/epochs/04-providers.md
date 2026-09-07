@@ -16,7 +16,7 @@
 - один HttpClient `llm`, `BaseAddress` из `Llm:BaseUrl` после мержа Local
 - POST `{BaseUrl}/chat/completions`, `stream: false`, `Authorization: Bearer` из `Llm:ApiKey`
 - `CacheMode` из Local: `none` или `openrouter` (`cache_control` на префиксе)
-- `max_tokens`, `temperature`, `model`
+- `max_tokens`, `model`; `temperature` — только если `Llm:SendTemperature` (эпоха 08)
 - `Llm:TimeoutSeconds` из Options на именованный HttpClient `llm` (дефолт **300**; дефолт BCL 100 с слишком короток для главы). Значение ≤ 0 — ошибка до HTTP
 - HTTP 401/403 — «ключ / шлюз»; 429 и 5xx включая **504** — ретраимые
 - unit-тесты сериализации (мок `HttpMessageHandler`): при `openrouter` есть `cache_control`, при `none` — нет; prefix в system, variable в user

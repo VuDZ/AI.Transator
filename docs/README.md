@@ -40,6 +40,7 @@
 | [epochs/05-extract.md](epochs/05-extract.md) | Наполнение корпуса из пары оригинал+перевод |
 | [epochs/06-extract-list-pairs.md](epochs/06-extract-list-pairs.md) | Печать пар глав extract без LLM (spine + превью ролей) |
 | [epochs/07-extract-pairs.md](epochs/07-extract-pairs.md) | extract --pairs: mapping-файл вместо индекса spine |
+| [epochs/08-send-temperature.md](epochs/08-send-temperature.md) | temperature в Chat Completions только при Llm:SendTemperature |
 
 ## Шаблон эпохи
 

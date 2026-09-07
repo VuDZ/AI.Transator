@@ -156,6 +156,7 @@ LlmResponse
 ```
 
 Кеш — `Llm:CacheMode` из Local (`none` | `openrouter`), не ветка пайплайна.
+`temperature` в JSON — только если `Llm:SendTemperature` (эпоха 08). Иначе поле не слать: Provod/GPT-5 на `0.3` отвечает 503.
 Нарезка: `ContextWindowTokens` минус префикс и резерв ответа. Оценка токенов: length/4.
 
 ## EPUB
