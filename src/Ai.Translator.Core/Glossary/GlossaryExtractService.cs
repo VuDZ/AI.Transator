@@ -1,4 +1,4 @@
-using Ai.Translator.Core.Abstractions;
+﻿using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 
 namespace Ai.Translator.Core.Glossary;
@@ -9,21 +9,25 @@ public sealed class GlossaryExtractService : IGlossaryExtractService
     private readonly IGlossaryParser _parser;
     private readonly IGlossaryWriter _writer;
     private readonly IGlossaryExtractor _extractor;
+    private readonly IGlossaryPairMapParser _pairMapParser;
 
     public GlossaryExtractService(
         IEpubBookService epub,
         IGlossaryParser parser,
         IGlossaryWriter writer,
-        IGlossaryExtractor extractor)
+        IGlossaryExtractor extractor,
+        IGlossaryPairMapParser pairMapParser)
     {
         ArgumentNullException.ThrowIfNull(epub);
         ArgumentNullException.ThrowIfNull(parser);
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(extractor);
+        ArgumentNullException.ThrowIfNull(pairMapParser);
         _epub = epub;
         _parser = parser;
         _writer = writer;
         _extractor = extractor;
+        _pairMapParser = pairMapParser;
     }
 
     public async Task ExtractAsync(
@@ -32,6 +36,8 @@ public sealed class GlossaryExtractService : IGlossaryExtractService
         string outputPath,
         string? mergeIntoPath,
         string? model,
+        string? pairsPath,
+        int? maxPairs,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(originalPath);
@@ -51,6 +57,18 @@ public sealed class GlossaryExtractService : IGlossaryExtractService
             throw new FileNotFoundException($"Translation EPUB was not found: {translationPath}", translationPath);
         }
 
+        IReadOnlyList<PairMapEntry>? pairMap = null;
+        if (!string.IsNullOrWhiteSpace(pairsPath))
+        {
+            if (!File.Exists(pairsPath))
+            {
+                throw new FileNotFoundException($"Pairs file was not found: {pairsPath}", pairsPath);
+            }
+
+            var pairsText = await File.ReadAllTextAsync(pairsPath, cancellationToken).ConfigureAwait(false);
+            pairMap = _pairMapParser.Parse(pairsText);
+        }
+
         GlossaryDocument? existing = null;
         if (!string.IsNullOrWhiteSpace(mergeIntoPath))
         {
@@ -66,7 +84,7 @@ public sealed class GlossaryExtractService : IGlossaryExtractService
         var original = await _epub.OpenAsync(originalPath, cancellationToken).ConfigureAwait(false);
         var translation = await _epub.OpenAsync(translationPath, cancellationToken).ConfigureAwait(false);
         var extracted = await _extractor
-            .ExtractAsync(original, translation, existing, model, cancellationToken)
+            .ExtractAsync(original, translation, existing, model, pairMap, maxPairs, cancellationToken)
             .ConfigureAwait(false);
 
         var output = _writer.Write(extracted);

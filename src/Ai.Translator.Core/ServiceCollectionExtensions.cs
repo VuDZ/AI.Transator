@@ -63,6 +63,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILlmProvider, ChatCompletionsLlmProvider>();
         services.AddSingleton<IBookTranslationService, BookTranslationService>();
         services.AddSingleton<IGlossaryExtractor, GlossaryExtractor>();
+        services.AddSingleton<IGlossaryPairMapParser, GlossaryPairMapParser>();
         services.AddSingleton<IGlossaryExtractService, GlossaryExtractService>();
         services.AddSingleton<IGlossaryPairPreview, GlossaryPairPreview>();
 

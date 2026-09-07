@@ -1,4 +1,4 @@
-namespace Ai.Translator.Core.Abstractions;
+﻿namespace Ai.Translator.Core.Abstractions;
 
 public interface IGlossaryExtractService
 {
@@ -8,5 +8,7 @@ public interface IGlossaryExtractService
         string outputPath,
         string? mergeIntoPath,
         string? model,
+        string? pairsPath,
+        int? maxPairs,
         CancellationToken cancellationToken);
 }

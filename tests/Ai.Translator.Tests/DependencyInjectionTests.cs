@@ -84,6 +84,7 @@ public sealed class DependencyInjectionTests
         Assert.IsType<ChatCompletionsLlmProvider>(provider.GetRequiredService<ILlmProvider>());
         Assert.NotNull(provider.GetRequiredService<IBookTranslationService>());
         Assert.IsType<GlossaryExtractor>(provider.GetRequiredService<IGlossaryExtractor>());
+        Assert.IsType<GlossaryPairMapParser>(provider.GetRequiredService<IGlossaryPairMapParser>());
         Assert.NotNull(provider.GetRequiredService<IGlossaryExtractService>());
         Assert.IsType<GlossaryPairPreview>(provider.GetRequiredService<IGlossaryPairPreview>());
         Assert.NotNull(provider.GetRequiredService<TimeProvider>());

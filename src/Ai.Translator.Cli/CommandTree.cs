@@ -116,6 +116,14 @@ internal static class CommandTree
         {
             Description = "Print kept spine pairs and suggested role pairs to stdout without calling the model."
         };
+        var pairsOption = new Option<string?>("--pairs")
+        {
+            Description = "Chapter pair mapping file. Without this flag, extract pairs kept spine index to index."
+        };
+        var maxPairsOption = new Option<int?>("--max-pairs")
+        {
+            Description = "Send only the first N expanded pairs from --pairs. Requires --pairs."
+        };
 
         var extract = new Command("extract", "Extract glossary candidates from an original and its translation.")
         {
@@ -124,7 +132,9 @@ internal static class CommandTree
             outOption,
             mergeIntoOption,
             modelOption,
-            listPairsOption
+            listPairsOption,
+            pairsOption,
+            maxPairsOption
         };
 
         extract.SetAction(async (parseResult, cancellationToken) =>
@@ -135,10 +145,33 @@ internal static class CommandTree
             var output = parseResult.GetValue(outOption);
             var mergeInto = parseResult.GetValue(mergeIntoOption);
             var model = parseResult.GetValue(modelOption);
+            var pairs = parseResult.GetValue(pairsOption);
+            var maxPairs = parseResult.GetValue(maxPairsOption);
+            if (GlossaryExtractArguments.HasListPairsPairsConflict(listPairs, pairs))
+            {
+                parseResult.InvocationConfiguration.Error.WriteLine(
+                    GlossaryExtractArguments.ListPairsPairsConflictMessage);
+                return 1;
+            }
+
             if (GlossaryExtractArguments.HasListPairsConflict(listPairs, output, mergeInto, model))
             {
                 parseResult.InvocationConfiguration.Error.WriteLine(
                     GlossaryExtractArguments.ListPairsConflictMessage);
+                return 1;
+            }
+
+            if (GlossaryExtractArguments.HasMaxPairsWithoutPairs(maxPairs, pairs))
+            {
+                parseResult.InvocationConfiguration.Error.WriteLine(
+                    GlossaryExtractArguments.MaxPairsRequiresPairsMessage);
+                return 1;
+            }
+
+            if (GlossaryExtractArguments.HasInvalidMaxPairs(maxPairs))
+            {
+                parseResult.InvocationConfiguration.Error.WriteLine(
+                    GlossaryExtractArguments.MaxPairsMustBePositiveMessage);
                 return 1;
             }
 
@@ -177,7 +210,10 @@ internal static class CommandTree
 
                 if (string.IsNullOrWhiteSpace(output))
                 {
-                    parseResult.InvocationConfiguration.Error.WriteLine("Missing required argument.");
+                    parseResult.InvocationConfiguration.Error.WriteLine(
+                        GlossaryExtractArguments.HasPairsWithoutOut(pairs, output)
+                            ? GlossaryExtractArguments.PairsRequiresOutMessage
+                            : "Missing required argument.");
                     return 1;
                 }
 
@@ -188,6 +224,8 @@ internal static class CommandTree
                     output,
                     mergeInto,
                     model,
+                    pairs,
+                    maxPairs,
                     cancellationToken);
                 return 0;
             }

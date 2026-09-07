@@ -1,4 +1,4 @@
-using Ai.Translator.Core;
+﻿using Ai.Translator.Core;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 using Ai.Translator.Core.Glossary;
@@ -59,6 +59,8 @@ public sealed class GlossaryExtractServiceTests
                 outPath,
                 mergeIntoPath: null,
                 model: "extract-model",
+                pairsPath: null,
+                maxPairs: null,
                 CancellationToken.None);
 
             Assert.True(File.Exists(outPath));
@@ -132,6 +134,8 @@ public sealed class GlossaryExtractServiceTests
                 outPath,
                 corpusPath,
                 model: null,
+                pairsPath: null,
+                maxPairs: null,
                 CancellationToken.None);
 
             var parsed = new GlossaryParser().Parse(await File.ReadAllTextAsync(outPath));
@@ -179,6 +183,8 @@ public sealed class GlossaryExtractServiceTests
             translation,
             existingCorpus: null,
             model: "test-model",
+            pairMap: null,
+            maxPairs: null,
             CancellationToken.None);
 
         Assert.Equal("Librarian", Assert.Single(document.Entries).English);
@@ -213,7 +219,7 @@ public sealed class GlossaryExtractServiceTests
             new Mock<IEpubBookService>(MockBehavior.Strict).Object);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.ExtractAsync("book.pdf", "book.epub", "out.md", null, null, CancellationToken.None));
+            service.ExtractAsync("book.pdf", "book.epub", "out.md", null, null, null, null, CancellationToken.None));
         Assert.Equal(InputPathGuard.PdfRejectedMessage, ex.Message);
     }
 
@@ -225,7 +231,7 @@ public sealed class GlossaryExtractServiceTests
             new Mock<IEpubBookService>(MockBehavior.Strict).Object);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.ExtractAsync("book.epub", "book.pdf", "out.md", null, null, CancellationToken.None));
+            service.ExtractAsync("book.epub", "book.pdf", "out.md", null, null, null, null, CancellationToken.None));
         Assert.Equal(InputPathGuard.PdfRejectedMessage, ex.Message);
     }
 
@@ -255,7 +261,8 @@ public sealed class GlossaryExtractServiceTests
             epub,
             new GlossaryParser(),
             new GlossaryWriter(),
-            CreateExtractor(llm, extractRules: extractRules));
+            CreateExtractor(llm, extractRules: extractRules),
+            new GlossaryPairMapParser());
     }
 
     private static GlossaryExtractor CreateExtractor(

@@ -1,4 +1,4 @@
-using Ai.Translator.Core.Domain;
+﻿using Ai.Translator.Core.Domain;
 
 namespace Ai.Translator.Core.Abstractions;
 
@@ -9,5 +9,7 @@ public interface IGlossaryExtractor
         EpubBookModel translation,
         GlossaryDocument? existingCorpus,
         string? model,
+        IReadOnlyList<PairMapEntry>? pairMap,
+        int? maxPairs,
         CancellationToken cancellationToken);
 }

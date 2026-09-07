@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 using Ai.Translator.Core.Options;
@@ -61,6 +61,8 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
         EpubBookModel translation,
         GlossaryDocument? existingCorpus,
         string? model,
+        IReadOnlyList<PairMapEntry>? pairMap,
+        int? maxPairs,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(original);
@@ -84,18 +86,7 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
         var translationChapters = translation.Chapters;
         var originalCount = originalChapters.Count;
         var translationCount = translationChapters.Count;
-        var pairedCount = Math.Min(originalCount, translationCount);
-
-        if (originalCount != translationCount)
-        {
-            _logger.LogWarning(
-                "Reading order lengths differ: original has {OriginalCount} chapter(s), translation has {TranslationCount}. Pairing the first {PairedCount}; leftover chapters are not sent to the model.",
-                originalCount,
-                translationCount,
-                pairedCount);
-            LogUnpairedTail(originalChapters, pairedCount, "original");
-            LogUnpairedTail(translationChapters, pairedCount, "translation");
-        }
+        var pairs = ResolvePairs(originalChapters, translationChapters, pairMap, maxPairs);
 
         var rules = await _extractRulesLoader.LoadAsync(cancellationToken).ConfigureAwait(false);
         var prefix = BuildStablePrefix(
@@ -116,11 +107,10 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
             Entries = []
         };
 
-        for (var i = 0; i < pairedCount; i++)
+        for (var i = 0; i < pairs.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var originalChapter = originalChapters[i];
-            var translationChapter = translationChapters[i];
+            var (originalChapter, translationChapter) = pairs[i];
             ArgumentNullException.ThrowIfNull(originalChapter);
             ArgumentNullException.ThrowIfNull(translationChapter);
 
@@ -170,6 +160,157 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
         }
 
         return result;
+    }
+
+    private IReadOnlyList<(EpubChapter Original, EpubChapter Translation)> ResolvePairs(
+        IReadOnlyList<EpubChapter> originalChapters,
+        IReadOnlyList<EpubChapter> translationChapters,
+        IReadOnlyList<PairMapEntry>? pairMap,
+        int? maxPairs)
+    {
+        if (pairMap is null)
+        {
+            if (maxPairs is not null)
+            {
+                throw new InvalidOperationException(GlossaryExtractArguments.MaxPairsRequiresPairsMessage);
+            }
+
+            return PairByIndex(originalChapters, translationChapters);
+        }
+
+        if (maxPairs is <= 0)
+        {
+            throw new InvalidOperationException(GlossaryExtractArguments.MaxPairsMustBePositiveMessage);
+        }
+
+        var expanded = ExpandPairMap(originalChapters, translationChapters, pairMap);
+        if (maxPairs is int n && n < expanded.Count)
+        {
+            return expanded.GetRange(0, n);
+        }
+
+        return expanded;
+    }
+
+    private List<(EpubChapter Original, EpubChapter Translation)> PairByIndex(
+        IReadOnlyList<EpubChapter> originalChapters,
+        IReadOnlyList<EpubChapter> translationChapters)
+    {
+        var originalCount = originalChapters.Count;
+        var translationCount = translationChapters.Count;
+        var pairedCount = Math.Min(originalCount, translationCount);
+
+        if (originalCount != translationCount)
+        {
+            _logger.LogWarning(
+                "Reading order lengths differ: original has {OriginalCount} chapter(s), translation has {TranslationCount}. Pairing the first {PairedCount}; leftover chapters are not sent to the model.",
+                originalCount,
+                translationCount,
+                pairedCount);
+            LogUnpairedTail(originalChapters, pairedCount, "original");
+            LogUnpairedTail(translationChapters, pairedCount, "translation");
+        }
+
+        var pairs = new List<(EpubChapter Original, EpubChapter Translation)>(pairedCount);
+        for (var i = 0; i < pairedCount; i++)
+        {
+            pairs.Add((originalChapters[i], translationChapters[i]));
+        }
+
+        return pairs;
+    }
+
+    private static List<(EpubChapter Original, EpubChapter Translation)> ExpandPairMap(
+        IReadOnlyList<EpubChapter> originalChapters,
+        IReadOnlyList<EpubChapter> translationChapters,
+        IReadOnlyList<PairMapEntry> pairMap)
+    {
+        var expanded = new List<(EpubChapter Original, EpubChapter Translation)>();
+        var seenOriginal = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenTranslation = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in pairMap)
+        {
+            ArgumentNullException.ThrowIfNull(entry);
+            var originalSlice = SliceKept(originalChapters, entry.OriginalFrom, entry.OriginalTo);
+            var translationSlice = SliceKept(translationChapters, entry.TranslationFrom, entry.TranslationTo);
+            if (originalSlice.Count != translationSlice.Count)
+            {
+                throw new InvalidOperationException(
+                    $"Range lengths do not match: {originalSlice.Count} vs {translationSlice.Count}.");
+            }
+
+            for (var i = 0; i < originalSlice.Count; i++)
+            {
+                var left = originalSlice[i];
+                var right = translationSlice[i];
+                if (!seenOriginal.Add(GlossaryPairPath.Normalize(left.FilePath)))
+                {
+                    throw new InvalidOperationException(
+                        $"Chapter path is mapped more than once: {left.FilePath}");
+                }
+
+                if (!seenTranslation.Add(GlossaryPairPath.Normalize(right.FilePath)))
+                {
+                    throw new InvalidOperationException(
+                        $"Chapter path is mapped more than once: {right.FilePath}");
+                }
+
+                expanded.Add((left, right));
+            }
+        }
+
+        return expanded;
+    }
+
+    private static IReadOnlyList<EpubChapter> SliceKept(
+        IReadOnlyList<EpubChapter> chapters,
+        string fromPath,
+        string toPath)
+    {
+        ArgumentNullException.ThrowIfNull(fromPath);
+        ArgumentNullException.ThrowIfNull(toPath);
+
+        var from = IndexOfChapter(chapters, fromPath);
+        if (from < 0)
+        {
+            throw new InvalidOperationException($"Chapter path was not found: {fromPath}");
+        }
+
+        var to = IndexOfChapter(chapters, toPath);
+        if (to < 0)
+        {
+            throw new InvalidOperationException($"Chapter path was not found: {toPath}");
+        }
+
+        if (from > to)
+        {
+            throw new InvalidOperationException(
+                $"Range start '{fromPath}' is after end '{toPath}'.");
+        }
+
+        var slice = new EpubChapter[to - from + 1];
+        for (var i = from; i <= to; i++)
+        {
+            slice[i - from] = chapters[i];
+        }
+
+        return slice;
+    }
+
+    private static int IndexOfChapter(IReadOnlyList<EpubChapter> chapters, string path)
+    {
+        for (var i = 0; i < chapters.Count; i++)
+        {
+            var chapter = chapters[i];
+            ArgumentNullException.ThrowIfNull(chapter);
+            if (GlossaryPairPath.AreEqual(chapter.FilePath, path))
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private void LogUnpairedTail(IReadOnlyList<EpubChapter> chapters, int pairedCount, string side)
