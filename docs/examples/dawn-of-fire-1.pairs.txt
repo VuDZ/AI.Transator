@@ -4,7 +4,7 @@
 # Пути — из `glossary extract --list-pairs`. С `--pairs` этот файл читает эпоха 07.
 #
 # Две точечные пары (плотный словарь) + блок глав 1–40.
-# Дым: --max-pairs 2 (только Dramatis и Vessels).
+# Короткий прогон: --max-pairs 2 (только Dramatis и Vessels).
 # Не входит: Backlist, TOC, Map, Extract, Legal, Architects, Notes.
 
 OEBPS/07-40k-Intro.xhtml = OEBPS/Text/Section0001.xhtml

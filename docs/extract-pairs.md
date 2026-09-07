@@ -39,6 +39,6 @@ ai-translator glossary extract --original <epub> --translation <epub> --out <md>
     [--max-pairs N]
 ```
 
-Без `--pairs` — i к i (эпоха 05). С `--pairs` — только строки файла. `--max-pairs N` — первые N развёрнутых пар (дым без правки файла). Не смешивать с `--list-pairs`. Не `--chapters`.
+Без `--pairs` — i к i (эпоха 05). С `--pairs` — только строки файла. `--max-pairs N` — первые N развёрнутых пар (короткий прогон без правки файла). Не смешивать с `--list-pairs`. Не `--chapters`.
 
 Пример для Dawn of Fire 1: [examples/dawn-of-fire-1.pairs.txt](examples/dawn-of-fire-1.pairs.txt).
