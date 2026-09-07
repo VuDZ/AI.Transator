@@ -1,200 +1,339 @@
 # AI Translator
 
-Литературный перевод EPUB EN → RU через LLM, со словарём вселенной.
+Консольная программа для литературного перевода книг с английского на русский через языковую модель.
 
-Как запускать и какие флаги есть — этот файл. Архитектура и эпохи — [docs/README.md](docs/README.md).
+Программа работает с EPUB и использует словарь выбранной вселенной, чтобы имена, звания, организации и устойчивые выражения переводились одинаково во всей книге.
 
-Требования: .NET SDK 10 (`global.json`), ключ шлюза в локальном конфиге. PDF на входе CLI отвергает.
+## Как устроен процесс
 
-Из корня репозитория:
+Есть два независимых сценария.
+
+### Если словарь уже готов
+
+1. Создать из общего словаря сокращённый словарь для конкретной английской книги.
+2. Перевести книгу с этим сокращённым словарём.
+
+### Если словаря ещё нет
+
+1. Взять английский EPUB и уже существующий русский перевод той же книги.
+2. Сопоставить соответствующие разделы двух EPUB.
+3. Попросить модель извлечь из них пары вида `Roboute Guilliman → Робаут Жиллиман`.
+4. Проверить полученный общий словарь вручную.
+5. Повторить для других книг той же вселенной, дополняя общий словарь.
+6. Создать рабочий словарь для книги, которую нужно перевести.
+7. Запустить перевод.
+
+В программе используются два вида словаря:
+
+- **Общий словарь вселенной** — большой проверенный Markdown-файл со всеми накопленными терминами из разных книг.
+- **Рабочий словарь книги** — автоматически отфильтрованная часть общего словаря: только термины, найденные в конкретной английской книге. Именно этот файл передаётся команде перевода.
+
+Сырой результат извлечения нельзя сразу использовать для перевода: модель может создать дубликаты, неверно определить тип записи или выбрать неудачный вариант. Сначала файл нужно вычитать, затем пропустить через `glossary compile`.
+
+## Требования
+
+- .NET SDK 10; требуемая версия указана в [global.json](global.json).
+- Английская книга в формате EPUB.
+- Для наполнения словаря — русский EPUB-перевод той же книги.
+- Ключ сервиса с OpenAI-совместимым Chat Completions API, например Provod.ai.
+
+PDF не поддерживается. Сначала его нужно преобразовать в EPUB внешней программой.
+
+Все команды ниже выполняются из корня репозитория:
 
 ```powershell
-dotnet run --project src\Ai.Translator.Cli -- <команда>
+dotnet run --project src\Ai.Translator.Cli -- <команда и параметры>
 ```
 
-Всё после `--` уходит в CLI.
+Разделитель `--` относится к `dotnet run`: всё после него передаётся программе AI Translator.
 
-## Один раз: локальный конфиг
+## Первоначальная настройка
 
-1. Скопировать [src/Ai.Translator.Cli/appsettings.Local.json.example](src/Ai.Translator.Cli/appsettings.Local.json.example) → `src/Ai.Translator.Cli/appsettings.Local.json`.
-2. Заполнить `Llm:BaseUrl`, `Llm:Model`, `Llm:ApiKey`.
-3. Файл в git не коммитить.
+Скопируйте файл:
 
-Поля `Llm` (подробности — [docs/local-config.md](docs/local-config.md)):
+```text
+src/Ai.Translator.Cli/appsettings.Local.json.example
+```
 
-| Поле | Смысл |
+в:
+
+```text
+src/Ai.Translator.Cli/appsettings.Local.json
+```
+
+Заполните как минимум `BaseUrl`, `Model` и `ApiKey`:
+
+```json
+{
+  "Llm": {
+    "BaseUrl": "https://api.provod.ai/v1",
+    "Model": "openai/gpt-5.6-terra",
+    "ApiKey": "sk_...",
+    "ContextWindowTokens": 128000,
+    "ReservedOutputTokens": 8000,
+    "TimeoutSeconds": 300,
+    "CacheMode": "none",
+    "SendTemperature": false
+  }
+}
+```
+
+`appsettings.Local.json` содержит секретный ключ, исключён из Git и не должен попадать в коммиты.
+
+### Параметры модели
+
+| Поле | Назначение |
 | --- | --- |
-| `BaseUrl` | Корень OpenAI-compatible API, например `https://api.provod.ai/v1` |
-| `Model` | Id модели в каталоге шлюза |
-| `ApiKey` | Ключ |
-| `ContextWindowTokens` | Окно модели |
-| `ReservedOutputTokens` | Лимит выхода (`max_tokens`) |
-| `TimeoutSeconds` | Таймаут одного запроса, дефолт 300 |
-| `CacheMode` | `none` или `openrouter` (явный `cache_control`). На Provod обычно `none` |
-| `SendTemperature` | `false` (дефолт) — поле `temperature` не слать. На GPT-5/Provod `0.3` даёт 503 |
+| `BaseUrl` | Базовый адрес API без `chat/completions` в конце |
+| `Model` | Точный идентификатор модели из каталога сервиса |
+| `ApiKey` | Секретный ключ API |
+| `ContextWindowTokens` | Максимальный размер контекста модели |
+| `ReservedOutputTokens` | Сколько токенов резервировать для ответа модели |
+| `TimeoutSeconds` | Максимальное время одного запроса; по умолчанию 300 секунд |
+| `CacheMode` | `none` — не отправлять специальные указания кешу; `openrouter` — явное кеширование только для совместимого API OpenRouter |
+| `SendTemperature` | Отправлять ли параметр `temperature`; по умолчанию `false` |
 
-`--model` на команде перекрывает `Llm:Model` на один запуск. Флага `--provider` нет.
+Для Provod.ai и GPT-5 рекомендуется `CacheMode: "none"` и `SendTemperature: false`. Отправка неподдерживаемой моделью температуры может закончиться HTTP 503.
 
-## Что за файлы
+Параметр `--model <id>` временно заменяет модель из Local.json только для одного запуска.
 
-| Файл | Кто пишет | Куда дальше |
+# Пошаговая работа
+
+## Шаг 1. Проверить соответствие разделов оригинала и перевода
+
+EPUB — это архив с набором внутренних XHTML-файлов. В одном издании перед первой главой могут находиться реклама, карта и список персонажей, а в другом — только оглавление. Поэтому «первый файл с первым, второй со вторым» часто даёт неверные пары и постепенно сдвигает весь роман.
+
+Команда ниже ничего не отправляет модели. Она показывает:
+
+- внутренний порядок текстовых разделов в английской и русской книгах;
+- пути этих разделов внутри EPUB;
+- предполагаемые совпадения по назначению, например `Chapter One` и `Глава первая`.
+
+```powershell
+dotnet run --project src\Ai.Translator.Cli -- glossary extract `
+  --original C:\books\en\book_en.epub `
+  --translation C:\books\ru\book_ru.epub `
+  --list-pairs
+```
+
+Внутренний порядок текстовых разделов далее называется **порядком чтения**. Пустые страницы, содержащие только изображение обложки или карты, программа из него исключает.
+
+По выводу команды создайте текстовый файл сопоставления. Он явно указывает, какой английский раздел соответствует какому русскому.
+
+Пример одной пары:
+
+```text
+OEBPS/07-Dramatis-Personae.xhtml = OEBPS/Text/Section0001.xhtml
+```
+
+Пример непрерывного диапазона из одинакового числа разделов:
+
+```text
+OEBPS/08-Content.xhtml .. OEBPS/08-Content-39.xhtml = OEBPS/Text/Section0003.xhtml .. OEBPS/Text/Section0042.xhtml
+```
+
+Такой файл в документации и параметрах программы называется **файлом сопоставления** или `pairs`-файлом. Полный формат описан в [docs/extract-pairs.md](docs/extract-pairs.md), готовый пример — [docs/examples/dawn-of-fire-1.pairs.txt](docs/examples/dawn-of-fire-1.pairs.txt).
+
+Если не указать `--pairs`, программа сопоставит разделы просто по их позиции. Это безопасно только для EPUB с действительно одинаковой структурой. Для официального издания и стороннего перевода почти всегда нужен файл сопоставления.
+
+## Шаг 2. Извлечь общий словарь из первой книги
+
+```powershell
+dotnet run --project src\Ai.Translator.Cli -- glossary extract `
+  --original C:\books\en\book1_en.epub `
+  --translation C:\books\ru\book1_ru.epub `
+  --pairs C:\books\book1.pairs.txt `
+  --out C:\books\universe-corpus.draft.md
+```
+
+Для каждой разрешённой пары разделов модель получает английский текст и соответствующий русский перевод. Результатом будут предложенные статьи Markdown-словаря.
+
+Для дешёвой проверки можно обработать только первые несколько пар после раскрытия диапазонов:
+
+```powershell
+dotnet run --project src\Ai.Translator.Cli -- glossary extract `
+  --original C:\books\en\book1_en.epub `
+  --translation C:\books\ru\book1_ru.epub `
+  --pairs C:\books\book1.pairs.txt `
+  --max-pairs 3 `
+  --out C:\books\book1-sample.md
+```
+
+Откройте полученный файл и проверьте:
+
+- написание имён и терминов;
+- дубли с разными заголовками;
+- ошибочные типы записей;
+- нежелательные варианты в `do-not-use`;
+- английские варианты написания в `aliases`.
+
+После проверки сохраните принятый файл как общий словарь, например `C:\books\universe-corpus.md`.
+
+## Шаг 3. Дополнить общий словарь второй книгой
+
+Безопасный вариант — не менять проверенный корпус сразу, а записать результат слияния в новый файл:
+
+```powershell
+dotnet run --project src\Ai.Translator.Cli -- glossary extract `
+  --original C:\books\en\book2_en.epub `
+  --translation C:\books\ru\book2_ru.epub `
+  --pairs C:\books\book2.pairs.txt `
+  --merge-into C:\books\universe-corpus.md `
+  --out C:\books\universe-corpus.with-book2.draft.md
+```
+
+Программа сохранит старый русский вариант существующей статьи, добавит новые сведения и допишет новые статьи в конец. Конфликты переводов между изданиями она автоматически не разрешает.
+
+После ручной проверки замените основной `universe-corpus.md` принятым результатом.
+
+Если резервная копия уже есть, допускается изменение файла на месте:
+
+```powershell
+... --merge-into C:\books\universe-corpus.md --out C:\books\universe-corpus.md
+```
+
+## Шаг 4. Создать рабочий словарь для переводимой книги
+
+Общий словарь может содержать тысячи терминов из других книг. Команда `compile` оставляет только записи, найденные в выбранном английском EPUB:
+
+```powershell
+dotnet run --project src\Ai.Translator.Cli -- glossary compile `
+  --corpus C:\books\universe-corpus.md `
+  --book C:\books\en\book-to-translate.epub `
+  --out C:\books\book-to-translate.working.md
+```
+
+Команда не обращается к модели и не расходует токены.
+
+Для каждой новой переводимой книги нужен отдельный рабочий словарь: общий корпус остаётся тем же, меняются `--book` и `--out`.
+
+## Шаг 5. Перевести одну или две главы для проверки
+
+Перед переводом всей книги стоит проверить модель, словарь, стиль и пунктуацию на небольшом диапазоне.
+
+```powershell
+dotnet run --project src\Ai.Translator.Cli -- translate `
+  --input C:\books\en\book-to-translate.epub `
+  --glossary C:\books\book-to-translate.working.md `
+  --out C:\books\book-to-translate.sample.epub `
+  --chapters 6-7
+```
+
+Числа в `--chapters` — не номера глав, напечатанные в оглавлении. Это позиции текстовых разделов во внутреннем порядке чтения EPUB, начиная с 1. Перед главой 1 могут находиться предисловие, легенда и список персонажей.
+
+Например, в английском EPUB *Dawn of Fire 9: The Silent King* первая глава находится в текстовом разделе 6, а вторая — в разделе 7.
+
+Результат всё равно является полным EPUB: выбранные разделы будут переведены, остальные останутся на английском.
+
+## Шаг 6. Перевести всю книгу
+
+Если проверка успешна, уберите `--chapters` и задайте отдельный каталог для промежуточных результатов:
+
+```powershell
+dotnet run --project src\Ai.Translator.Cli -- translate `
+  --input C:\books\en\book-to-translate.epub `
+  --glossary C:\books\book-to-translate.working.md `
+  --out C:\books\book-to-translate.ru.epub `
+  --work-dir C:\books\work\book-to-translate
+```
+
+Если запуск прервался, продолжите его:
+
+```powershell
+dotnet run --project src\Ai.Translator.Cli -- translate `
+  --input C:\books\en\book-to-translate.epub `
+  --glossary C:\books\book-to-translate.working.md `
+  --out C:\books\book-to-translate.ru.epub `
+  --work-dir C:\books\work\book-to-translate `
+  --resume
+```
+
+Продолжение возможно только с теми же входными файлами, выходным файлом, моделью, рабочим словарём и диапазоном `--chapters`. Если изменились системные инструкции перевода или рабочий словарь, изменится общая часть запросов к модели — нужно начать с нового рабочего каталога.
+
+# Справочник команд
+
+## `glossary compile`
+
+Создаёт рабочий словарь конкретной книги из общего корпуса. Модель не вызывается.
+
+| Параметр | Обязательный | Назначение |
 | --- | --- | --- |
-| Корпус вселенной `.md` | ты + `glossary extract` | вычитать глазами, потом `compile` |
-| Mapping `.pairs.txt` | ты после `--list-pairs` | `--pairs` у extract |
-| Рабочий словарь `.md` | `glossary compile` | `--glossary` у `translate` |
-| Выходной `.epub` | `translate` | чтение |
+| `--corpus <md>` | да | Проверенный общий словарь вселенной |
+| `--book <epub>` | да | Английская книга, для которой отбираются записи |
+| `--out <md>` | да | Новый рабочий словарь книги |
 
-Сырой extract в `translate` не совать. Сначала глаза, потом `compile` на **ту** английскую книгу, которую переводишь.
+## `glossary extract --list-pairs`
 
-## По шагам
+Показывает внутренние текстовые разделы двух EPUB и помогает подготовить файл сопоставления. Модель не вызывается.
 
-### 1. Пары глав (без LLM)
-
-Официальный EPUB и фанперевод почти никогда не совпадают по spine. Сначала печать kept-порядка:
-
-```powershell
-dotnet run --project src\Ai.Translator.Cli -- glossary extract --original C:\books\en\книга_en.epub --translation C:\books\rus\книга_ru.epub --list-pairs
-```
-
-`--list-pairs` нельзя мешать с `--out` / `--merge-into` / `--model` / `--pairs`.
-
-Пишешь mapping: точечные пары и блоки путей из этой печати. Формат — [docs/extract-pairs.md](docs/extract-pairs.md). Пример: [docs/examples/dawn-of-fire-1.pairs.txt](docs/examples/dawn-of-fire-1.pairs.txt).
-
-Без `--pairs` extract парует индекс к индексу и на BL vs фан сдвигает всю книгу.
-
-`--chapters` у extract нет. Короткий прогон — `--max-pairs N` после разворота mapping.
-
-### 2. Наполнить корпус
-
-Первая книга:
-
-```powershell
-dotnet run --project src\Ai.Translator.Cli -- glossary extract --original C:\books\en\книга1_en.epub --translation C:\books\rus\книга1_ru.epub --out C:\books\corpus.md --pairs docs\examples\книга1.pairs.txt
-```
-
-Коротко (первые N развёрнутых пар):
-
-```powershell
-... --pairs docs\examples\книга1.pairs.txt --max-pairs 3
-```
-
-Вторая книга — в уже **вычитанный** корпус:
-
-```powershell
-dotnet run --project src\Ai.Translator.Cli -- glossary extract --original C:\books\en\книга2_en.epub --translation C:\books\rus\книга2_ru.epub --out C:\books\corpus.md --merge-into C:\books\corpus.md --pairs путь\книга2.pairs.txt
-```
-
-`--out` = `--merge-into` — допись in-place. Старый `ru` не затирается. Новые статьи в конец.
-
-Снова вычитать MD. Автослияние двух сырых extract — плохая идея.
-
-### 3. Рабочий словарь на книгу перевода
-
-```powershell
-dotnet run --project src\Ai.Translator.Cli -- glossary compile --corpus C:\books\corpus.md --book C:\books\en\книга_которую_переводишь.epub --out C:\books\working-книга.md
-```
-
-`--book` — английский EPUB. В `--out` только статьи, чей English или alias есть в тексте этой книги.
-
-Другая книга на перевод — тот же `--corpus`, другой `--book` и другой `--out`.
-
-### 4. Перевод
-
-Вся книга:
-
-```powershell
-dotnet run --project src\Ai.Translator.Cli -- translate --input C:\books\en\книга.epub --glossary C:\books\working-книга.md --out C:\books\out-книга.epub
-```
-
-Одна–две главы (проверка):
-
-```powershell
-... --chapters 6-7
-```
-
-`--chapters` — **1-based kept reading order**: spine, пустой XHTML (обложка/карта без текста) уже выкинут. Это не `playOrder` из TOC. На Dawn of Fire 9 (*The Silent King*) Chapter One = `6`, Chapter Two = `7`.
-
-Выход всегда полный EPUB: выбранные главы на русском, остальные — копия оригинала.
-
-Чекпоинты:
-
-```powershell
-... --work-dir C:\books\work-книга --resume
-```
-
-`--resume` с другим `--chapters` или другим хешем префикса (после правки `prompts/translate-system.md` или working MD) — отказ. Нужен новый `--work-dir` или прогон с нуля.
-
-## Команды и опции
-
-### `glossary compile`
-
-Рабочий словарь книги из полного корпуса. Без LLM.
-
-| Опция | Обяз. | Смысл |
+| Параметр | Обязательный | Назначение |
 | --- | --- | --- |
-| `--corpus <md>` | да | полный корпус вселенной |
-| `--book <epub>` | да | английский EPUB, по нему фильтр |
-| `--out <md>` | да | рабочий MD |
+| `--original <epub>` | да | Английский оригинал |
+| `--translation <epub>` | да | Существующий русский перевод |
+| `--list-pairs` | да | Включает режим просмотра разделов |
 
-### `glossary extract --list-pairs`
+В этом режиме нельзя указывать `--out`, `--merge-into`, `--model` и `--pairs`.
 
-Печать kept-пар и превью ролей в stdout. Без LLM.
+## `glossary extract`
 
-| Опция | Обяз. | Смысл |
+Извлекает кандидаты для общего словаря из оригинала и существующего перевода. Модель вызывается; результат требует ручной проверки.
+
+| Параметр | Обязательный | Назначение |
 | --- | --- | --- |
-| `--original <epub>` | да | оригинал |
-| `--translation <epub>` | да | существующий перевод |
-| `--list-pairs` | да | режим печати |
+| `--original <epub>` | да | Английский оригинал |
+| `--translation <epub>` | да | Русский перевод того же произведения |
+| `--out <md>` | да | Файл для результата |
+| `--pairs <file>` | нет | Явное сопоставление разделов; настоятельно рекомендуется для разных изданий |
+| `--max-pairs N` | нет | Обработать только первые N раскрытых пар; требует `--pairs`, N должно быть больше нуля |
+| `--merge-into <md>` | нет | Взять существующий общий словарь за основу |
+| `--model <id>` | нет | Временно использовать другую модель |
 
-Нельзя вместе с `--out`, `--merge-into`, `--model`, `--pairs`.
+`--list-pairs` и `--pairs` взаимоисключающие. Главы для extract выбираются файлом сопоставления; параметра `--chapters` здесь нет.
 
-### `glossary extract` (наполнение)
+## `translate`
 
-Модель предлагает `##` записи. Человек ревьюит.
+Переводит английский EPUB с рабочим словарём.
 
-| Опция | Обяз. | Смысл |
+| Параметр | Обязательный | Назначение |
 | --- | --- | --- |
-| `--original <epub>` | да | оригинал |
-| `--translation <epub>` | да | литературный перевод того же произведения |
-| `--out <md>` | да* | куда писать MD (*не нужен только с `--list-pairs`) |
-| `--pairs <file>` | нет | mapping путей; без флага — индекс к индексу |
-| `--max-pairs N` | нет | первые N развёрнутых пар; только вместе с `--pairs`; N > 0 |
-| `--merge-into <md>` | нет | слить в существующий корпус; `ru` священен |
-| `--model <id>` | нет | перекрыть `Llm:Model` |
+| `--input <epub>` | да | Английская книга |
+| `--glossary <md>` | да | Рабочий словарь, созданный командой `glossary compile` |
+| `--out <epub>` | да | Выходной EPUB |
+| `--model <id>` | нет | Временно использовать другую модель |
+| `--chapters n` | нет | Перевести один текстовый раздел с указанной позицией |
+| `--chapters from-to` | нет | Перевести включительный диапазон позиций, например `6-7` |
+| `--work-dir <path>` | нет | Каталог промежуточных файлов и состояния |
+| `--resume` | нет | Продолжить незавершённый запуск из `--work-dir` |
 
-`--list-pairs` и `--pairs` вместе — ошибка. `--max-pairs` без `--pairs` — ошибка.
+Если после повторных попыток некоторые фрагменты не переведены, программа завершится с ненулевым кодом возврата. Частичный EPUB при этом может быть записан.
 
-### `translate`
+# Частые вопросы и ошибки
 
-Перевод EPUB. Префикс = [prompts/translate-system.md](prompts/translate-system.md) + рабочий словарь. Стабилен на книгу.
+### Почему первая глава имеет номер 6 или 7?
 
-| Опция | Обяз. | Смысл |
-| --- | --- | --- |
-| `--input <epub>` | да | английский EPUB |
-| `--glossary <md>` | да | **рабочий** словарь после `compile` |
-| `--out <epub>` | да | выходной EPUB |
-| `--model <id>` | нет | перекрыть `Llm:Model` |
-| `--chapters n` или `from-to` | нет | kept-индекс, включительно; без флага — вся книга |
-| `--work-dir <path>` | нет | каталог чекпоинтов |
-| `--resume` | нет | добить незакрытые чанки из `--work-dir` |
+Программа считает текстовые разделы EPUB, а не главы из оглавления. До первой главы обычно идут реклама, легенда, содержание и список персонажей. Пустые страницы с одной картинкой не считаются.
 
-Ненулевой exit, если остались дырки, даже если частичный EPUB записан.
+### Почему извлечение сопоставило разные главы?
 
-## Частые поломки
+Структуры оригинального издания и перевода отличаются. Создайте файл сопоставления через `--list-pairs` и передайте его в `--pairs`.
 
-- **503 на GPT-5/Provod** — в Local не ставить `SendTemperature: true`.
-- **Extract сдвинул роман** — не гоняй без `--pairs`.
-- **`--chapters 7` взял не ту главу** — это не TOC `playOrder`. Считай kept-файлы с текстом.
-- **Resume не встаёт** — сменился префикс (промпт или working MD) или диапазон глав.
-- **Кеш extract не хитит, translate хитит** — у extract user огромный (EN+RU); у translate system толстый и тот же.
+### Почему Provod.ai отвечает HTTP 503?
 
-## Документация
+Проверьте точный идентификатор модели и оставьте `SendTemperature: false`. Некоторые модели не принимают `temperature`, даже если API в целом совместим с OpenAI.
 
-| Файл | О чём |
-| --- | --- |
-| [docs/README.md](docs/README.md) | оглавление контракта |
-| [docs/local-config.md](docs/local-config.md) | Local.json |
-| [docs/glossary-format.md](docs/glossary-format.md) | канон MD-словаря |
-| [docs/extract-pairs.md](docs/extract-pairs.md) | синтаксис `--pairs` |
-| [docs/architecture.md](docs/architecture.md) | слои и CLI-поверхность |
-| [AGENTS.md](AGENTS.md) | правила агентов |
+### Почему `--resume` отказывается продолжать?
+
+Изменился один из параметров запуска: книга, модель, диапазон разделов, системный промпт или рабочий словарь. Используйте новый `--work-dir` либо верните прежние входные данные.
+
+### Почему кеш виден при переводе, но не при наполнении словаря?
+
+При переводе системные инструкции и рабочий словарь одинаковы для всех фрагментов книги, поэтому модель может повторно читать эту общую часть из кеша. При наполнении словаря каждый запрос содержит новую пару английского и русского текстов; возможность кеширования зависит от модели и сервиса API.
+
+# Дополнительная документация
+
+- [docs/README.md](docs/README.md) — оглавление архитектурного контракта и эпох.
+- [docs/local-config.md](docs/local-config.md) — подробная настройка модели.
+- [docs/glossary-format.md](docs/glossary-format.md) — формат общего и рабочего словарей.
+- [docs/extract-pairs.md](docs/extract-pairs.md) — формат файла сопоставления разделов.
+- [docs/architecture.md](docs/architecture.md) — архитектура приложения.
+- [AGENTS.md](AGENTS.md) — правила разработки для агентов.
