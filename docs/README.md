@@ -24,8 +24,9 @@
 3. [local-config.md](local-config.md) — BaseUrl, модель и ключ локально.
 4. [glossary-format.md](glossary-format.md) — канон Markdown-словаря.
 5. [`prompts/translate-system.md`](../prompts/translate-system.md) — общие правила перевода (слой 1 префикса).
-6. Эпохи по порядку: следующая не начинается, пока предыдущая не закрыта по критериям приёмки.
-7. [backlog.md](backlog.md) — сознательно отложенное. Это не скоуп v1.
+6. [extract-pairs.md](extract-pairs.md) — mapping глав для extract (пока только формат, CLI не читает).
+7. Эпохи по порядку: следующая не начинается, пока предыдущая не закрыта по критериям приёмки.
+8. [backlog.md](backlog.md) — сознательно отложенное. Это не скоуп v1.
 
 ## Эпохи
 

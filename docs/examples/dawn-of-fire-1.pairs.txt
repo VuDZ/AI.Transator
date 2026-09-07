@@ -1,0 +1,18 @@
+# Dawn of Fire 1 — Avenging Son (Guy Haley)
+# EN: DawnOfFire_1_en.epub (Black Library)
+# RU: DawnOfFire_1_ru.epub (фанперевод)
+# Пути — из `glossary extract --list-pairs`. Extract пока этот файл не читает.
+#
+# Две точечные пары (плотный словарь) + блок глав 1–40.
+# Не входит: Backlist, TOC, Map, Extract, Legal, Architects, Notes.
+
+OEBPS/07-40k-Intro.xhtml = OEBPS/Text/Section0001.xhtml
+OEBPS/07-40k-Intro-1.xhtml = OEBPS/Text/Section0002.xhtml
+
+OEBPS/08-40k-Content.xhtml .. OEBPS/08-40k-Content-39.xhtml = OEBPS/Text/Section0003.xhtml .. OEBPS/Text/Section0042.xhtml
+
+# По желанию точечные (legend / epilogue / appendix / author):
+# OEBPS/06-New40k-Legend.xhtml = OEBPS/Text/Legend.xhtml
+# OEBPS/08-40k-Content-40.xhtml = OEBPS/Text/Section0043.xhtml
+# OEBPS/08-40k-Content-41.xhtml = OEBPS/Text/Section0044.xhtml
+# OEBPS/10-Guy-Haley.xhtml = OEBPS/Text/Section0045.xhtml
