@@ -36,8 +36,9 @@ OEBPS/08-40k-Content.xhtml .. OEBPS/08-40k-Content-39.xhtml = OEBPS/Text/Section
 
 ```
 ai-translator glossary extract --original <epub> --translation <epub> --out <md> --pairs <file>
+    [--max-pairs N]
 ```
 
-Без `--pairs` — i к i (эпоха 05). С `--pairs` — только строки файла. Не смешивать с `--list-pairs`.
+Без `--pairs` — i к i (эпоха 05). С `--pairs` — только строки файла. `--max-pairs N` — первые N развёрнутых пар (дым без правки файла). Не смешивать с `--list-pairs`. Не `--chapters`.
 
 Пример для Dawn of Fire 1: [examples/dawn-of-fire-1.pairs.txt](examples/dawn-of-fire-1.pairs.txt).

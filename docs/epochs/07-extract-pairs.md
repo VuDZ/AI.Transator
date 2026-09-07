@@ -8,7 +8,7 @@
 
 ## Вход / выход
 
-**Вход:** два EPUB, `--out`, `--pairs <file>`. Опционально `--merge-into`, `--model`.
+**Вход:** два EPUB, `--out`, `--pairs <file>`. Опционально `--merge-into`, `--model`, `--max-pairs N`.
 
 **Выход:** тот же MD, что в 05, но LLM зовётся только по строкам mapping (порядок строк файла; блок разворачивается в kept-порядке).
 
@@ -24,13 +24,14 @@
 - путь не найден в книге — ошибка до LLM с этим путём
 - один путь дважды в файле — ошибка до LLM
 - главы вне mapping не отправлять
+- `--max-pairs N` (только вместе с `--pairs`): после разворота файла взять первые N пар, остальные не звать. Без флага — все пары файла. N ≤ 0 — ошибка до LLM. `--max-pairs` без `--pairs` — ошибка (не путать с `--chapters` translate)
 - prefix extract тот же, что в 05 (правила + известные English), не резать под пару
 - unit-тесты на фикстурных EPUB (не живые книги): точечная пара и блок; VariableContent совпадает с mapping, не со spine-индексом; глава вне файла не уходит; несовпадение длин блока — `CompleteAsync` ни разу
 
 ## Вне скоупа
 
 - GUI / TUI
-- `--align`, `--shift`, `--chapters` на extract
+- `--align`, `--shift`, `--chapters` на extract (общий индекс на BL/фан врёт; лимит — `--max-pairs`)
 - менять `--list-pairs` и классификатор ролей
 - sentence-align
 - глобы, YAML, JSON рядом с mapping
@@ -39,7 +40,7 @@
 
 ```
 ai-translator glossary extract --original <epub> --translation <epub> --out <md> --pairs <file>
-    [--merge-into <corpus.md>] [--model <id>]
+    [--merge-into <corpus.md>] [--model <id>] [--max-pairs N]
 ```
 
 ```
@@ -58,6 +59,8 @@ IGlossaryExtractor.ExtractAsync(..., pairMapOrNull, ct)
 - путь из mapping отсутствует в EPUB — ошибка, LLM не вызван
 - длины блока 2 vs 3 — ошибка, LLM не вызван
 - без `--pairs` extract 05 не ломается
+- mapping из трёх пар + `--max-pairs 2` — два вызова LLM, третья пара не уходит
+- `--max-pairs` без `--pairs` или N ≤ 0 — ошибка, LLM не вызван
 - PDF — тот же отказ, что в 00
 
 ## Риски
