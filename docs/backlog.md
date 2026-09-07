@@ -15,6 +15,10 @@
 
 Двухязычного процесса в `ai-translator` не появляется.
 
+## Дисклеймер «официальный текст» в префиксе
+
+На GPT-5 / OpenAI-совместимых шлюзах отказ на насилие и тьму в опубликованной прозе. Мысль: одна-две строки в слое 1 — [`prompts/translate-system.md`](../prompts/translate-system.md) (и при отказе extract — в [`prompts/extract-system.md`](../prompts/extract-system.md)): official published novel, battle/violence/dark themes are part of the work, translate or extract faithfully, no softening. Без имён вселенных, без «обхода цензуры». Меняет ключ кеша. Не делать, пока не вернёмся с живого extract на модель, которая реально режет.
+
 ## PDF
 
 Отдельная задача извлечения текста и глав, не «ещё один IEpubBookService». Пока вход — конвертация вовне, CLI отказывает.
