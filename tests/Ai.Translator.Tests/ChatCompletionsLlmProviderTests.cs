@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Ai.Translator.Core;
@@ -122,6 +122,35 @@ public sealed class ChatCompletionsLlmProviderTests
 
         Assert.Equal(9, response.PromptTokens);
         Assert.Equal(7, response.CachedTokens);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ParsesCompletionTokensFromUsage()
+    {
+        const string payload =
+            "{\"choices\":[{\"message\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":4,\"cached_tokens\":2}}";
+        var handler = new RecordingHandler((_, _) => Task.FromResult(JsonResponse(payload)));
+
+        var provider = CreateProvider(handler, NoneOptions());
+        var response = await provider.CompleteAsync(SampleRequest(), CancellationToken.None);
+
+        Assert.Equal(11, response.PromptTokens);
+        Assert.Equal(4, response.CompletionTokens);
+        Assert.Equal(2, response.CachedTokens);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_MissingCompletionTokens_LeavesNull()
+    {
+        const string payload =
+            "{\"choices\":[{\"message\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":9}}";
+        var handler = new RecordingHandler((_, _) => Task.FromResult(JsonResponse(payload)));
+
+        var provider = CreateProvider(handler, NoneOptions());
+        var response = await provider.CompleteAsync(SampleRequest(), CancellationToken.None);
+
+        Assert.Equal(9, response.PromptTokens);
+        Assert.Null(response.CompletionTokens);
     }
 
     [Fact]

@@ -1,9 +1,10 @@
-﻿using System.Text;
+using System.Text;
 using Ai.Translator.Core;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Glossary;
 using Ai.Translator.Core.Llm;
 using Ai.Translator.Core.Options;
+using Ai.Translator.Core.Progress;
 using Ai.Translator.Core.Translation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -89,6 +90,7 @@ public sealed class DependencyInjectionTests
         Assert.NotNull(provider.GetRequiredService<IGlossaryExtractService>());
         Assert.IsType<GlossaryPairPreview>(provider.GetRequiredService<IGlossaryPairPreview>());
         Assert.NotNull(provider.GetRequiredService<TimeProvider>());
+        Assert.IsType<NullRunProgress>(provider.GetRequiredService<IRunProgress>());
     }
 
     [Fact]

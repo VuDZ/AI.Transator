@@ -1,7 +1,8 @@
-﻿using System.Text;
+using System.Text;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 using Ai.Translator.Core.Options;
+using Ai.Translator.Core.Progress;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -24,6 +25,8 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
     private readonly ExtractRulesLoader _extractRulesLoader;
     private readonly IOptions<TranslatorOptions> _translatorOptions;
     private readonly IOptions<LlmOptions> _llmOptions;
+    private readonly TimeProvider _timeProvider;
+    private readonly IRunProgress _progress;
     private readonly ILogger<GlossaryExtractor> _logger;
 
     public GlossaryExtractor(
@@ -35,7 +38,9 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
         ExtractRulesLoader extractRulesLoader,
         IOptions<TranslatorOptions> translatorOptions,
         IOptions<LlmOptions> llmOptions,
-        ILogger<GlossaryExtractor>? logger = null)
+        ILogger<GlossaryExtractor>? logger = null,
+        TimeProvider? timeProvider = null,
+        IRunProgress? progress = null)
     {
         ArgumentNullException.ThrowIfNull(llm);
         ArgumentNullException.ThrowIfNull(parser);
@@ -54,6 +59,8 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
         _translatorOptions = translatorOptions;
         _llmOptions = llmOptions;
         _logger = logger ?? NullLogger<GlossaryExtractor>.Instance;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _progress = progress ?? NullRunProgress.Instance;
     }
 
     public async Task<GlossaryDocument> ExtractAsync(
@@ -107,6 +114,7 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
             Entries = []
         };
 
+        var steps = new List<(int PairIndex, EpubChapter Original, EpubChapter Translation, string OriginalFragment, string TranslationFragment, string Label)>();
         for (var i = 0; i < pairs.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -130,35 +138,52 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
                 translationCount,
                 budget);
 
-            foreach (var fragment in fragments)
+            for (var fragmentIndex = 0; fragmentIndex < fragments.Count; fragmentIndex++)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var variable = WrapPair(
-                    fragment.Original,
-                    fragment.Translation,
-                    originalChapter.FilePath ?? string.Empty,
-                    translationChapter.FilePath ?? string.Empty,
-                    i + 1,
-                    originalCount,
-                    translationCount);
-
-                var response = await _llm.CompleteAsync(
-                        new LlmRequest
-                        {
-                            Model = resolvedModel,
-                            StablePrefix = prefix,
-                            VariableContent = variable,
-                            MaxOutputTokens = llm.ReservedOutputTokens,
-                            Temperature = translator.Temperature
-                        },
-                        cancellationToken)
-                    .ConfigureAwait(false);
-
-                ArgumentNullException.ThrowIfNull(response);
-                result = MergeModelOutput(result, response.Content, i + 1);
+                var fragment = fragments[fragmentIndex];
+                var path = originalChapter.FilePath ?? string.Empty;
+                var label = fragments.Count == 1
+                    ? $"{i + 1}:{path}"
+                    : $"{i + 1}:{path}#{fragmentIndex + 1}";
+                steps.Add((i + 1, originalChapter, translationChapter, fragment.Original, fragment.Translation, label));
             }
         }
 
+        var reporter = new RunProgressReporter(_progress, _timeProvider);
+        reporter.Begin(steps.Count);
+
+        foreach (var step in steps)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            reporter.StepBegin(step.Label);
+            var variable = WrapPair(
+                step.OriginalFragment,
+                step.TranslationFragment,
+                step.Original.FilePath ?? string.Empty,
+                step.Translation.FilePath ?? string.Empty,
+                step.PairIndex,
+                originalCount,
+                translationCount);
+
+            var response = await _llm.CompleteAsync(
+                    new LlmRequest
+                    {
+                        Model = resolvedModel,
+                        StablePrefix = prefix,
+                        VariableContent = variable,
+                        MaxOutputTokens = llm.ReservedOutputTokens,
+                        Temperature = translator.Temperature
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            ArgumentNullException.ThrowIfNull(response);
+            reporter.RecordResponse(response);
+            reporter.StepEnd(failed: false);
+            result = MergeModelOutput(result, response.Content, step.PairIndex);
+        }
+
+        reporter.Complete();
         return result;
     }
 

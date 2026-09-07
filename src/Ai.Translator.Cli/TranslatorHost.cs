@@ -1,5 +1,7 @@
-using Ai.Translator.Core;
+﻿using Ai.Translator.Core;
+using Ai.Translator.Core.Abstractions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -22,8 +24,10 @@ internal static class TranslatorHost
             .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
             .AddEnvironmentVariables();
 
+        builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
         builder.Logging.AddConsole();
         builder.Services.AddTranslator(builder.Configuration);
+        builder.Services.AddSingleton<IRunProgress>(_ => new SpectreRunProgress(ErrorAnsiConsole.Create()));
         return builder;
     }
 }

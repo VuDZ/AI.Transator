@@ -1,9 +1,10 @@
-﻿using System.Net.Http.Headers;
+using System.Net.Http.Headers;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Epub;
 using Ai.Translator.Core.Glossary;
 using Ai.Translator.Core.Llm;
 using Ai.Translator.Core.Options;
+using Ai.Translator.Core.Progress;
 using Ai.Translator.Core.Translation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -53,6 +54,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IEpubBookService, EpubBookService>();
         services.AddSingleton<IGlossaryCompileService, GlossaryCompileService>();
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IRunProgress, NullRunProgress>();
         services.AddSingleton<ITokenEstimator, LengthTokenEstimator>();
         services.AddSingleton<ITranslationPromptFactory, TranslationPromptFactory>();
         services.AddSingleton(_ => new StyleRulesLoader(AppContext.BaseDirectory));

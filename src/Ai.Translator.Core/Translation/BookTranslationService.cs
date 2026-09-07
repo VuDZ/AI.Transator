@@ -1,7 +1,8 @@
-using Ai.Translator.Core.Abstractions;
+﻿using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 using Ai.Translator.Core.Llm;
 using Ai.Translator.Core.Options;
+using Ai.Translator.Core.Progress;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -21,6 +22,7 @@ public sealed class BookTranslationService : IBookTranslationService
     private readonly IOptions<TranslatorOptions> _translatorOptions;
     private readonly IOptions<LlmOptions> _llmOptions;
     private readonly TimeProvider _timeProvider;
+    private readonly IRunProgress _progress;
     private readonly ILogger<BookTranslationService> _logger;
     private readonly TermCandidateExtractor _candidates;
     private readonly StyleRulesLoader _styleRulesLoader;
@@ -38,7 +40,8 @@ public sealed class BookTranslationService : IBookTranslationService
         IOptions<LlmOptions> llmOptions,
         TimeProvider timeProvider,
         ILogger<BookTranslationService>? logger = null,
-        StyleRulesLoader? styleRulesLoader = null)
+        StyleRulesLoader? styleRulesLoader = null,
+        IRunProgress? progress = null)
     {
         ArgumentNullException.ThrowIfNull(epub);
         ArgumentNullException.ThrowIfNull(glossaryParser);
@@ -65,6 +68,7 @@ public sealed class BookTranslationService : IBookTranslationService
         _logger = logger ?? NullLogger<BookTranslationService>.Instance;
         _candidates = new TermCandidateExtractor();
         _styleRulesLoader = styleRulesLoader ?? new StyleRulesLoader();
+        _progress = progress ?? NullRunProgress.Instance;
     }
 
     public async Task<TranslationResult> RunAsync(TranslationJob job, CancellationToken cancellationToken)
@@ -154,6 +158,7 @@ public sealed class BookTranslationService : IBookTranslationService
             statusById[item.Id] = item;
         }
 
+        var remainingChunks = new List<TranslationChunk>();
         foreach (var chunk in planned)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -180,6 +185,17 @@ public sealed class BookTranslationService : IBookTranslationService
                 continue;
             }
 
+            remainingChunks.Add(chunk);
+        }
+
+        var reporter = new RunProgressReporter(_progress, _timeProvider);
+        reporter.Begin(remainingChunks.Count);
+
+        foreach (var chunk in remainingChunks)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var checkpoint = statusById[chunk.Id];
+            reporter.StepBegin(chunk.Id);
             var translated = await TranslateChunkAsync(
                     chunk,
                     prefix,
@@ -188,8 +204,10 @@ public sealed class BookTranslationService : IBookTranslationService
                     translator,
                     llm,
                     workDir,
+                    reporter,
                     cancellationToken)
                 .ConfigureAwait(false);
+            reporter.StepEnd(translated is null);
 
             if (translated is null)
             {
@@ -219,6 +237,8 @@ public sealed class BookTranslationService : IBookTranslationService
                     cancellationToken)
                 .ConfigureAwait(false);
         }
+
+        reporter.Complete();
 
         var replacements = BuildReplacements(planned, translations);
         await _epub.WriteCopyAsync(job.InputPath, job.OutputPath, replacements, cancellationToken)
@@ -279,6 +299,7 @@ public sealed class BookTranslationService : IBookTranslationService
         TranslatorOptions translator,
         LlmOptions llm,
         string workDir,
+        RunProgressReporter reporter,
         CancellationToken cancellationToken)
     {
         var contentTokens = _tokenEstimator.Estimate(chunk.SourceHtml);
@@ -306,6 +327,7 @@ public sealed class BookTranslationService : IBookTranslationService
 
                 var response = await _llm.CompleteAsync(request, cancellationToken).ConfigureAwait(false);
                 ArgumentNullException.ThrowIfNull(response);
+                reporter.RecordResponse(response);
                 _logger.LogInformation(
                     "Chunk {ChunkId} attempt {Attempt}/{MaxAttempts}: ~{PrefixTokens} prefix tokens, ~{ContentTokens} content tokens, cached {CachedTokens}.",
                     chunk.Id,

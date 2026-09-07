@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.Json;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 using Ai.Translator.Core.Epub;
@@ -454,10 +455,138 @@ public sealed class BookTranslationServiceTests
         }
     }
 
+    [Fact]
+    public async Task RunAsync_TwoChunks_ReportsProgressAndSumsPromptTokens()
+    {
+        var root = NewRoot();
+        try
+        {
+            var input = MinimalEpubFactory.Create(
+                root,
+                "<p>Alpha</p>",
+                "<p>Beta</p>");
+            var glossary = await WriteGlossaryAsync(root);
+            var output = Path.Combine(root, "out.epub");
+            var workDir = Path.Combine(root, "work");
+            var progress = new RecordingRunProgress();
+            var llm = CreateMappingLlm(req =>
+            {
+                if (req.VariableContent.Contains("Alpha", StringComparison.Ordinal))
+                {
+                    return new LlmResponse
+                    {
+                        Content = "<p>Альфа</p>",
+                        FinishReason = "stop",
+                        PromptTokens = 10
+                    };
+                }
+
+                return new LlmResponse
+                {
+                    Content = "<p>Бета</p>",
+                    FinishReason = "stop",
+                    PromptTokens = 15
+                };
+            });
+
+            var result = await CreateService(llm.Object, progress: progress).RunAsync(
+                Job(input, glossary, output, workDir),
+                CancellationToken.None);
+
+            Assert.False(result.HasFailures);
+            Assert.Equal(2, progress.TotalSteps);
+            Assert.Equal(new[] { "0001-0000", "0002-0000" }, progress.Labels);
+            Assert.Equal(2, progress.Ends.Count);
+            Assert.Equal(1, progress.Ends[0].Totals.StepCount);
+            Assert.Equal(10, progress.Ends[0].Totals.PromptTokens);
+            Assert.Equal(2, progress.Ends[1].Totals.StepCount);
+            Assert.Equal(25, progress.Ends[1].Totals.PromptTokens);
+            Assert.Equal(25, progress.CompletedTotals?.PromptTokens);
+            Assert.True(progress.Completed);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_ResumeWithOneDone_CountsOnlyRemainingChunks()
+    {
+        var root = NewRoot();
+        try
+        {
+            var input = MinimalEpubFactory.Create(
+                root,
+                "<p>Alpha</p>",
+                "<p>Beta</p>");
+            var glossary = await WriteGlossaryAsync(root);
+            var output = Path.Combine(root, "out.epub");
+            var workDir = Path.Combine(root, "work");
+            var llm = CreateMappingLlm(req =>
+            {
+                if (req.VariableContent.Contains("Alpha", StringComparison.Ordinal))
+                {
+                    return Ok("<p>Альфа</p>");
+                }
+
+                return Ok("<p>Бета</p>");
+            });
+
+            var first = CreateService(llm.Object);
+            Assert.False((await first.RunAsync(
+                Job(input, glossary, output, workDir),
+                CancellationToken.None)).HasFailures);
+
+            var statePath = Path.Combine(workDir, "state.json");
+            var state = JsonSerializer.Deserialize<TranslationCheckpointState>(
+                await File.ReadAllTextAsync(statePath));
+            Assert.NotNull(state);
+            var second = Assert.Single(state.Chunks, chunk => chunk.Id == "0002-0000");
+            second.Status = ChunkStatuses.Pending;
+            await File.WriteAllTextAsync(
+                statePath,
+                JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
+
+            var progress = new RecordingRunProgress();
+            var resumeLlm = new Mock<ILlmProvider>(MockBehavior.Strict);
+            resumeLlm.Setup(x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((LlmRequest req, CancellationToken _) =>
+                {
+                    Assert.Contains("Beta", req.VariableContent, StringComparison.Ordinal);
+                    return Ok("<p>Бета снова</p>");
+                });
+
+            var resume = await CreateService(resumeLlm.Object, progress: progress).RunAsync(
+                new TranslationJob
+                {
+                    InputPath = input,
+                    GlossaryPath = glossary,
+                    OutputPath = output,
+                    WorkDir = workDir,
+                    Resume = true
+                },
+                CancellationToken.None);
+
+            Assert.False(resume.HasFailures);
+            Assert.Equal(1, progress.TotalSteps);
+            Assert.Equal("0002-0000", Assert.Single(progress.Labels));
+            Assert.Single(progress.Ends);
+            resumeLlm.Verify(
+                x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
     private static BookTranslationService CreateService(
         ILlmProvider llm,
         int maxRetries = 3,
-        StyleRulesLoader? styleRulesLoader = null)
+        StyleRulesLoader? styleRulesLoader = null,
+        IRunProgress? progress = null)
     {
         return new BookTranslationService(
             new EpubBookService(),
@@ -481,7 +610,8 @@ public sealed class BookTranslationServiceTests
                 ReservedOutputTokens = 500
             }),
             TimeProvider.System,
-            styleRulesLoader: styleRulesLoader);
+            styleRulesLoader: styleRulesLoader,
+            progress: progress);
     }
 
     private static TranslationJob Job(

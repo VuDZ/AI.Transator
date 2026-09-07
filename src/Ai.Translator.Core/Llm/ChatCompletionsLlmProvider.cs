@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -220,6 +220,7 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
 
             var promptTokens = 0;
             int? cachedTokens = null;
+            int? completionTokens = null;
             if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
             {
                 if (usage.TryGetProperty("prompt_tokens", out var promptElement)
@@ -229,6 +230,12 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
                 }
 
                 cachedTokens = ReadCachedTokens(usage);
+
+                if (usage.TryGetProperty("completion_tokens", out var completionElement)
+                    && completionElement.TryGetInt32(out var parsedCompletion))
+                {
+                    completionTokens = parsedCompletion;
+                }
             }
 
             return new LlmResponse
@@ -236,7 +243,8 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
                 Content = content,
                 FinishReason = finishReason,
                 PromptTokens = promptTokens,
-                CachedTokens = cachedTokens
+                CachedTokens = cachedTokens,
+                CompletionTokens = completionTokens
             };
         }
     }

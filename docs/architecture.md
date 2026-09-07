@@ -155,6 +155,7 @@ LlmResponse
   FinishReason
   PromptTokens
   CachedTokens
+  CompletionTokens
 ```
 
 Кеш — `Llm:CacheMode` из Local (`none` | `openrouter`), не ветка пайплайна.

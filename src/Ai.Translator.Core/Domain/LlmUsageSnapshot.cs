@@ -1,14 +1,16 @@
 namespace Ai.Translator.Core.Domain;
 
-public sealed class LlmResponse
+public sealed class LlmUsageSnapshot
 {
-    public string Content { get; init; } = string.Empty;
-
-    public string FinishReason { get; init; } = string.Empty;
-
     public int PromptTokens { get; init; }
 
     public int? CachedTokens { get; init; }
 
     public int? CompletionTokens { get; init; }
+
+    public TimeSpan Elapsed { get; init; }
+
+    public int StepCount { get; init; }
+
+    public int FailedCount { get; init; }
 }

@@ -366,6 +366,39 @@ public sealed class GlossaryExtractPairMapTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task ExtractAsync_TwoPairs_ReportsStepLabelsWithPath()
+    {
+        var llm = CreateLlm();
+        var progress = new RecordingRunProgress();
+        var extractor = CreateExtractor(llm.Object, progress);
+
+        await extractor.ExtractAsync(
+            Book(
+                Chapter("OEBPS/A.xhtml", "Alpha unique"),
+                Chapter("OEBPS/B.xhtml", "Bravo unique")),
+            Book(
+                Chapter("OEBPS/X.xhtml", "Икс уникальный"),
+                Chapter("OEBPS/Y.xhtml", "Игрек уникальный")),
+            existingCorpus: null,
+            model: "test-model",
+            pairMap: null,
+            maxPairs: null,
+            CancellationToken.None);
+
+        Assert.Equal(2, progress.TotalSteps);
+        Assert.Equal(2, progress.Labels.Count);
+        Assert.Contains("OEBPS/A.xhtml", progress.Labels[0], StringComparison.Ordinal);
+        Assert.Contains("OEBPS/B.xhtml", progress.Labels[1], StringComparison.Ordinal);
+        Assert.Equal(2, progress.Ends.Count);
+        Assert.Equal(1, progress.Ends[0].Totals.StepCount);
+        Assert.Equal(2, progress.Ends[1].Totals.StepCount);
+        Assert.True(progress.Completed);
+        llm.Verify(
+            x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+    }
+
     private static async Task<(int Exit, string Stdout, string Stderr)> InvokeExtractAsync(
         ILlmProvider llm,
         params string[] extractArgs)
@@ -442,7 +475,7 @@ public sealed class GlossaryExtractPairMapTests
         return requests;
     }
 
-    private static GlossaryExtractor CreateExtractor(ILlmProvider llm)
+    private static GlossaryExtractor CreateExtractor(ILlmProvider llm, IRunProgress? progress = null)
     {
         return new GlossaryExtractor(
             llm,
@@ -457,7 +490,8 @@ public sealed class GlossaryExtractPairMapTests
                 Model = "test-model",
                 ContextWindowTokens = 8000,
                 ReservedOutputTokens = 500
-            }));
+            }),
+            progress: progress);
     }
 
     private static EpubBookModel Book(params EpubChapter[] chapters) =>
