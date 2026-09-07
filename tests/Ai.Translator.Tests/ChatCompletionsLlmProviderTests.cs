@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
 using Ai.Translator.Core;
@@ -41,7 +41,7 @@ public sealed class ChatCompletionsLlmProviderTests
         Assert.Equal("test-model", root.GetProperty("model").GetString());
         Assert.False(root.GetProperty("stream").GetBoolean());
         Assert.Equal(500, root.GetProperty("max_tokens").GetInt32());
-        Assert.Equal(0.2, root.GetProperty("temperature").GetDouble());
+        Assert.False(root.TryGetProperty("temperature", out _));
 
         var messages = root.GetProperty("messages");
         Assert.Equal(2, messages.GetArrayLength());
@@ -75,11 +75,39 @@ public sealed class ChatCompletionsLlmProviderTests
         Assert.DoesNotContain("cache_control", body, StringComparison.Ordinal);
 
         using var json = JsonDocument.Parse(body!);
-        var messages = json.RootElement.GetProperty("messages");
+        var root = json.RootElement;
+        Assert.False(root.GetProperty("stream").GetBoolean());
+        Assert.Equal(500, root.GetProperty("max_tokens").GetInt32());
+        Assert.False(root.TryGetProperty("temperature", out _));
+        var messages = root.GetProperty("messages");
         Assert.Equal("system", messages[0].GetProperty("role").GetString());
         Assert.Equal("stable prefix", messages[0].GetProperty("content").GetString());
         Assert.Equal("user", messages[1].GetProperty("role").GetString());
         Assert.Equal("<p>Chapter text</p>", messages[1].GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public async Task CompleteAsync_SendTemperatureTrue_IncludesRequestTemperature()
+    {
+        string? body = null;
+        var handler = new RecordingHandler(async (request, cancellationToken) =>
+        {
+            body = request.Content is null
+                ? null
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            return CompletionResponse("<p>Ok</p>");
+        });
+
+        var options = NoneOptions();
+        options.SendTemperature = true;
+        var provider = CreateProvider(handler, options);
+        await provider.CompleteAsync(SampleRequest(), CancellationToken.None);
+
+        using var json = JsonDocument.Parse(body!);
+        var root = json.RootElement;
+        Assert.False(root.GetProperty("stream").GetBoolean());
+        Assert.Equal(500, root.GetProperty("max_tokens").GetInt32());
+        Assert.Equal(0.2, root.GetProperty("temperature").GetDouble());
     }
 
     [Fact]
@@ -173,6 +201,12 @@ public sealed class ChatCompletionsLlmProviderTests
     public void LlmOptions_TimeoutSeconds_DefaultsTo300()
     {
         Assert.Equal(300, new LlmOptions().TimeoutSeconds);
+    }
+
+    [Fact]
+    public void LlmOptions_SendTemperature_DefaultsToFalse()
+    {
+        Assert.False(new LlmOptions().SendTemperature);
     }
 
     private static ChatCompletionsLlmProvider CreateProvider(HttpMessageHandler handler, LlmOptions options)

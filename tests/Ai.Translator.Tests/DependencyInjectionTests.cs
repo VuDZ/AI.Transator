@@ -60,6 +60,7 @@ public sealed class DependencyInjectionTests
         Assert.Equal("test-model", llm.Model);
         Assert.Equal("test-key", llm.ApiKey);
         Assert.Equal(180, llm.TimeoutSeconds);
+        Assert.False(llm.SendTemperature);
 
         var factory = provider.GetRequiredService<IHttpClientFactory>();
         using var client = factory.CreateClient(ServiceCollectionExtensions.LlmHttpClientName);

@@ -17,4 +17,6 @@ public sealed class LlmOptions
     public int TimeoutSeconds { get; set; } = 300;
 
     public string CacheMode { get; set; } = "none";
+
+    public bool SendTemperature { get; set; }
 }

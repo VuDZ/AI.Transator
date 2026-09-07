@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -49,7 +49,7 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
         {
             Content = new StringContent(
-                BuildRequestJson(request, llm.CacheMode),
+                BuildRequestJson(request, llm.CacheMode, llm.SendTemperature),
                 Encoding.UTF8,
                 "application/json")
         };
@@ -126,7 +126,7 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
         }
     }
 
-    private static string BuildRequestJson(LlmRequest request, string? cacheMode)
+    private static string BuildRequestJson(LlmRequest request, string? cacheMode, bool sendTemperature)
     {
         JsonNode systemContent;
         if (IsOpenRouterCacheMode(cacheMode))
@@ -163,9 +163,13 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
                 }
             },
             ["max_tokens"] = request.MaxOutputTokens,
-            ["temperature"] = request.Temperature,
             ["stream"] = false
         };
+
+        if (sendTemperature)
+        {
+            payload["temperature"] = request.Temperature;
+        }
 
         return payload.ToJsonString(RequestJsonOptions);
     }
