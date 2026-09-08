@@ -1,4 +1,4 @@
-using Ai.Translator.Cli;
+﻿using Ai.Translator.Cli;
 using Ai.Translator.Core.Domain;
 using Spectre.Console;
 
@@ -45,8 +45,10 @@ public sealed class SpectreRunProgressTests
         Assert.Contains("chapter-a.xhtml", dump, StringComparison.Ordinal);
         Assert.Contains("chapter-b.xhtml", dump, StringComparison.Ordinal);
         Assert.Contains("\u001b[", dump, StringComparison.Ordinal);
-        Assert.Contains("A", dump, StringComparison.Ordinal);
         Assert.Contains("last", dump, StringComparison.Ordinal);
+        Assert.True(
+            System.Text.RegularExpressions.Regex.IsMatch(dump, "\u001b\\[[2-9]\\d*A"),
+            "After the usage table is shown, the next redraw must cursor-up more than one line.");
     }
 
     private static (IAnsiConsole Console, StringWriter Writer) CreateConsole(bool interactive)

@@ -1,4 +1,4 @@
-using Ai.Translator.Core.Abstractions;
+﻿using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 using Spectre.Console;
 using Spectre.Console.Rendering;
@@ -102,9 +102,10 @@ internal sealed class SpectreRunProgress : IRunProgress, IDisposable
 
     private void RenderLive()
     {
-        var block = BuildLiveBlock();
+        var block = new LiveBlock(BuildLiveBlock());
         if (_liveActive && _liveHeight > 0)
         {
+            // Cursor sits on the last row of the previous block (no trailing newline).
             var moveUp = Math.Max(0, _liveHeight - 1);
             _console.WriteAnsi(writer =>
             {
@@ -124,7 +125,7 @@ internal sealed class SpectreRunProgress : IRunProgress, IDisposable
         }
 
         _console.Write(block);
-        _liveHeight = MeasureHeight(block);
+        _liveHeight = block.Height;
         _liveActive = true;
     }
 
@@ -155,8 +156,33 @@ internal sealed class SpectreRunProgress : IRunProgress, IDisposable
     private string BuildBarMarkup()
     {
         var eta = _eta <= TimeSpan.Zero ? "—" : FormatDuration(_eta);
-        var label = string.IsNullOrEmpty(_label) ? string.Empty : " " + Markup.Escape(_label);
-        return $"{RenderBar(_done, _total)} [green]{_done}[/]/[grey]{_total}[/]{label}  ETA {Markup.Escape(eta)}";
+        var etaPart = $"ETA {Markup.Escape(eta)}";
+        var label = FitLabel(_label, etaPart);
+        var labelPart = string.IsNullOrEmpty(label) ? string.Empty : " " + Markup.Escape(label);
+        return $"{RenderBar(_done, _total)} [green]{_done}[/]/[grey]{_total}[/]{labelPart}  {etaPart}";
+    }
+
+    private string FitLabel(string label, string etaPart)
+    {
+        if (string.IsNullOrEmpty(label))
+        {
+            return label;
+        }
+
+        var width = Math.Max(40, _console.Profile.Width);
+        var reserved = BarWidth + 1 + 8 + 2 + etaPart.Length;
+        var budget = Math.Max(0, width - reserved - 1);
+        if (label.Length <= budget)
+        {
+            return label;
+        }
+
+        if (budget <= 1)
+        {
+            return string.Empty;
+        }
+
+        return label[..(budget - 1)] + "…";
     }
 
     private void WriteTotalsTable(LlmUsageSnapshot totals)
@@ -208,12 +234,6 @@ internal sealed class SpectreRunProgress : IRunProgress, IDisposable
             .AddColumn("failed");
     }
 
-    private int MeasureHeight(IRenderable renderable)
-    {
-        var lines = Segment.SplitLines(renderable.GetSegments(_console));
-        return Math.Max(1, lines.Count);
-    }
-
     private static string RenderBar(int done, int total)
     {
         if (total <= 0)
@@ -248,4 +268,43 @@ internal sealed class SpectreRunProgress : IRunProgress, IDisposable
     }
 
     private static string FormatNullable(int? value) => value is null ? "—" : value.Value.ToString();
+
+    /// <summary>
+    /// Renders without a trailing newline so the cursor stays on the last row,
+    /// matching Spectre Live (move up Height-1, then CR).
+    /// </summary>
+    private sealed class LiveBlock : Renderable
+    {
+        private readonly IRenderable _inner;
+
+        public LiveBlock(IRenderable inner)
+        {
+            _inner = inner;
+        }
+
+        public int Height { get; private set; } = 1;
+
+        protected override IEnumerable<Segment> Render(RenderOptions options, int maxWidth)
+        {
+            var lines = Segment.SplitLines(_inner.Render(options, maxWidth), maxWidth);
+            while (lines.Count > 0 && lines[^1].Length == 0)
+            {
+                lines.RemoveAt(lines.Count - 1);
+            }
+
+            Height = Math.Max(1, lines.Count);
+            for (var i = 0; i < lines.Count; i++)
+            {
+                foreach (var segment in lines[i])
+                {
+                    yield return segment;
+                }
+
+                if (i < lines.Count - 1)
+                {
+                    yield return Segment.LineBreak;
+                }
+            }
+        }
+    }
 }
