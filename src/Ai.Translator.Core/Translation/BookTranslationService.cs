@@ -117,15 +117,20 @@ public sealed class BookTranslationService : IBookTranslationService
         ArgumentNullException.ThrowIfNull(book);
         var chapters = book.Chapters;
         ArgumentNullException.ThrowIfNull(chapters);
-        var range = ChapterRangeParser.Parse(job.Chapters, chapters.Count);
 
         TranslationCheckpointState? existing = null;
+        ChapterRange range;
         if (job.Resume)
         {
             existing = await _checkpoints.LoadAsync(workDir, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidOperationException(
                     "Cannot resume: state.json was not found in the work directory.");
+            range = ResolveResumeRange(job.Chapters, existing, chapters.Count);
             EnsureResumeCompatible(existing, prefixHash, range);
+        }
+        else
+        {
+            range = ChapterRangeParser.Parse(job.Chapters, chapters.Count);
         }
 
         var profile = new ModelProfile
@@ -177,12 +182,6 @@ public sealed class BookTranslationService : IBookTranslationService
                 }
 
                 checkpoint.Status = ChunkStatuses.Pending;
-            }
-
-            if (string.Equals(checkpoint.Status, ChunkStatuses.Failed, StringComparison.Ordinal))
-            {
-                translations[chunk.Id] = chunk.SourceHtml;
-                continue;
             }
 
             remainingChunks.Add(chunk);
@@ -563,5 +562,26 @@ public sealed class BookTranslationService : IBookTranslationService
                 terms.Add(term);
             }
         }
+    }
+    private static ChapterRange ResolveResumeRange(
+            string? spec,
+            TranslationCheckpointState existing,
+            int chapterCount)
+    {
+        ArgumentNullException.ThrowIfNull(existing);
+        if (string.IsNullOrWhiteSpace(spec))
+        {
+            var from = existing.ChapterFrom;
+            var to = existing.ChapterTo;
+            if (from < 1 || to < from || to > chapterCount)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot resume: checkpoint chapter range is outside the book. The book has {chapterCount} chapters.");
+            }
+
+            return new ChapterRange(from, to);
+        }
+
+        return ChapterRangeParser.Parse(spec, chapterCount);
     }
 }

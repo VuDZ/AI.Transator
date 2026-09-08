@@ -1,4 +1,4 @@
-using System.IO.Compression;
+﻿using System.IO.Compression;
 using System.Text.Json;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
@@ -575,6 +575,124 @@ public sealed class BookTranslationServiceTests
             resumeLlm.Verify(
                 x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()),
                 Times.Once);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_Resume_RetriesFailedChunks()
+    {
+        var root = NewRoot();
+        try
+        {
+            var input = MinimalEpubFactory.Create(
+                root,
+                "<p>FAILME</p>",
+                "<p>KeepMe</p>");
+            var glossary = await WriteGlossaryAsync(root);
+            var output = Path.Combine(root, "out.epub");
+            var workDir = Path.Combine(root, "work");
+            var firstLlm = CreateMappingLlm(req =>
+            {
+                if (req.VariableContent.Contains("FAILME", StringComparison.Ordinal))
+                {
+                    return new LlmResponse { Content = "", FinishReason = "stop", PromptTokens = 1 };
+                }
+
+                return Ok("<p>Сохранено</p>");
+            });
+
+            var first = await CreateService(firstLlm.Object, maxRetries: 1).RunAsync(
+                Job(input, glossary, output, workDir),
+                CancellationToken.None);
+            Assert.True(first.HasFailures);
+            Assert.Equal(1, first.FailedChunkCount);
+
+            var progress = new RecordingRunProgress();
+            var resumeLlm = new Mock<ILlmProvider>(MockBehavior.Strict);
+            resumeLlm.Setup(x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((LlmRequest req, CancellationToken _) =>
+                {
+                    Assert.Contains("FAILME", req.VariableContent, StringComparison.Ordinal);
+                    Assert.DoesNotContain("KeepMe", req.VariableContent, StringComparison.Ordinal);
+                    return Ok("<p>Исправлено</p>");
+                });
+
+            var resume = await CreateService(resumeLlm.Object, progress: progress).RunAsync(
+                new TranslationJob
+                {
+                    InputPath = input,
+                    GlossaryPath = glossary,
+                    OutputPath = output,
+                    WorkDir = workDir,
+                    Resume = true
+                },
+                CancellationToken.None);
+
+            Assert.False(resume.HasFailures);
+            Assert.Equal(1, progress.TotalSteps);
+            Assert.Equal("0001-0000", Assert.Single(progress.Labels));
+            resumeLlm.Verify(
+                x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()),
+                Times.Once);
+
+            var book = await new EpubBookService().OpenAsync(output, CancellationToken.None);
+            Assert.Contains("Исправлено", book.Chapters[0].PlainText, StringComparison.Ordinal);
+            Assert.Contains("Сохранено", book.Chapters[1].PlainText, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_ResumeWithoutChapters_UsesCheckpointRange()
+    {
+        var root = NewRoot();
+        try
+        {
+            var input = MinimalEpubFactory.Create(
+                root,
+                "<p>Alpha</p>",
+                "<p>Beta</p>");
+            var glossary = await WriteGlossaryAsync(root);
+            var output = Path.Combine(root, "out.epub");
+            var workDir = Path.Combine(root, "work");
+            var llm = CreateMappingLlm(req =>
+            {
+                Assert.Contains("Alpha", req.VariableContent, StringComparison.Ordinal);
+                Assert.DoesNotContain("Beta", req.VariableContent, StringComparison.Ordinal);
+                return Ok("<p>Альфа</p>");
+            });
+
+            Assert.False((await CreateService(llm.Object).RunAsync(
+                Job(input, glossary, output, workDir, chapters: "1"),
+                CancellationToken.None)).HasFailures);
+
+            var resumeLlm = new Mock<ILlmProvider>(MockBehavior.Strict);
+            var resume = await CreateService(resumeLlm.Object).RunAsync(
+                new TranslationJob
+                {
+                    InputPath = input,
+                    GlossaryPath = glossary,
+                    OutputPath = output,
+                    WorkDir = workDir,
+                    Resume = true
+                },
+                CancellationToken.None);
+
+            Assert.False(resume.HasFailures);
+            resumeLlm.Verify(
+                x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+
+            var book = await new EpubBookService().OpenAsync(output, CancellationToken.None);
+            Assert.Contains("Альфа", book.Chapters[0].PlainText, StringComparison.Ordinal);
+            Assert.Contains("Beta", book.Chapters[1].PlainText, StringComparison.Ordinal);
         }
         finally
         {
