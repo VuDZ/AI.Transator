@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using Ai.Translator.Core;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
@@ -245,6 +245,7 @@ internal static class CommandTree
             }
             catch (Exception ex) when (ex is FileNotFoundException or GlossaryFormatException or InvalidOperationException or LlmException)
             {
+                StopRunProgress(services);
                 parseResult.InvocationConfiguration.Error.WriteLine(ex.Message);
                 return 1;
             }
@@ -336,11 +337,17 @@ internal static class CommandTree
             }
             catch (Exception ex) when (ex is FileNotFoundException or GlossaryFormatException or InvalidOperationException or LlmException)
             {
+                StopRunProgress(services);
                 parseResult.InvocationConfiguration.Error.WriteLine(ex.Message);
                 return 1;
             }
         });
 
         return translate;
+    }
+
+    private static void StopRunProgress(IServiceProvider services)
+    {
+        (services.GetService<IRunProgress>() as IDisposable)?.Dispose();
     }
 }

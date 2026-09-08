@@ -1,16 +1,23 @@
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 using Spectre.Console;
+using Spectre.Console.Rendering;
 
 namespace Ai.Translator.Cli;
 
-internal sealed class SpectreRunProgress : IRunProgress
+internal sealed class SpectreRunProgress : IRunProgress, IDisposable
 {
     private const int BarWidth = 24;
     private readonly IAnsiConsole _console;
     private int _total;
     private int _done;
     private string _label = string.Empty;
+    private TimeSpan _eta;
+    private LlmUsageSnapshot? _last;
+    private LlmUsageSnapshot? _totals;
+    private int _liveHeight;
+    private bool _liveActive;
+    private bool _disposed;
 
     public SpectreRunProgress(IAnsiConsole console)
     {
@@ -18,23 +25,37 @@ internal sealed class SpectreRunProgress : IRunProgress
         _console = console;
     }
 
+    private bool UseLive =>
+        !_disposed
+        && _console.Profile.Capabilities.Interactive
+        && _console.Profile.Capabilities.Ansi;
+
     public void Begin(int totalSteps)
     {
         _total = totalSteps;
         _done = 0;
         _label = string.Empty;
+        _eta = TimeSpan.Zero;
+        _last = null;
+        _totals = null;
         if (totalSteps <= 0)
         {
             return;
         }
 
-        _console.MarkupLine($"[grey]0/{totalSteps}[/]");
+        if (UseLive)
+        {
+            RenderLive();
+        }
     }
 
     public void StepBegin(string label)
     {
         _label = label ?? string.Empty;
-        _console.MarkupLine($"[blue]…[/] {Markup.Escape(_label)}");
+        if (UseLive)
+        {
+            RenderLive();
+        }
     }
 
     public void StepEnd(LlmUsageSnapshot last, LlmUsageSnapshot totals, TimeSpan etaOrZero)
@@ -42,15 +63,104 @@ internal sealed class SpectreRunProgress : IRunProgress
         ArgumentNullException.ThrowIfNull(last);
         ArgumentNullException.ThrowIfNull(totals);
         _done++;
-        var eta = etaOrZero <= TimeSpan.Zero ? "—" : FormatDuration(etaOrZero);
-        _console.MarkupLine(
-            $"{RenderBar(_done, _total)} [green]{_done}[/]/[grey]{_total}[/] {Markup.Escape(_label)}  ETA {Markup.Escape(eta)}");
-        WriteUsage(last, totals);
+        _last = last;
+        _totals = totals;
+        _eta = etaOrZero;
+        if (UseLive)
+        {
+            RenderLive();
+            return;
+        }
+
+        _console.MarkupLine(BuildBarMarkup());
     }
 
     public void Complete(LlmUsageSnapshot totals)
     {
         ArgumentNullException.ThrowIfNull(totals);
+        _totals = totals;
+        if (_liveActive)
+        {
+            RenderLive();
+            StopLive();
+            return;
+        }
+
+        WriteTotalsTable(totals);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        StopLive();
+    }
+
+    private void RenderLive()
+    {
+        var block = BuildLiveBlock();
+        if (_liveActive && _liveHeight > 0)
+        {
+            var moveUp = Math.Max(0, _liveHeight - 1);
+            _console.WriteAnsi(writer =>
+            {
+                writer.HideCursor();
+                writer.Write("\r");
+                if (moveUp > 0)
+                {
+                    writer.CursorUp(moveUp);
+                }
+
+                writer.EraseInDisplay(0);
+            });
+        }
+        else
+        {
+            _console.Cursor.Hide();
+        }
+
+        _console.Write(block);
+        _liveHeight = MeasureHeight(block);
+        _liveActive = true;
+    }
+
+    private void StopLive()
+    {
+        if (!_liveActive)
+        {
+            return;
+        }
+
+        _console.Cursor.Show();
+        _console.WriteLine();
+        _liveActive = false;
+        _liveHeight = 0;
+    }
+
+    private IRenderable BuildLiveBlock()
+    {
+        var bar = new Markup(BuildBarMarkup());
+        if (_last is null || _totals is null)
+        {
+            return bar;
+        }
+
+        return new Rows(bar, CreateLastTotalTable(_last, _totals));
+    }
+
+    private string BuildBarMarkup()
+    {
+        var eta = _eta <= TimeSpan.Zero ? "—" : FormatDuration(_eta);
+        var label = string.IsNullOrEmpty(_label) ? string.Empty : " " + Markup.Escape(_label);
+        return $"{RenderBar(_done, _total)} [green]{_done}[/]/[grey]{_total}[/]{label}  ETA {Markup.Escape(eta)}";
+    }
+
+    private void WriteTotalsTable(LlmUsageSnapshot totals)
+    {
         var table = CreateUsageTable();
         table.AddRow(
             "[bold]total[/]",
@@ -63,7 +173,7 @@ internal sealed class SpectreRunProgress : IRunProgress
         _console.Write(table);
     }
 
-    private void WriteUsage(LlmUsageSnapshot last, LlmUsageSnapshot totals)
+    private static Table CreateLastTotalTable(LlmUsageSnapshot last, LlmUsageSnapshot totals)
     {
         var table = CreateUsageTable();
         table.AddRow(
@@ -82,12 +192,12 @@ internal sealed class SpectreRunProgress : IRunProgress
             FormatNullable(totals.CompletionTokens),
             totals.StepCount.ToString(),
             totals.FailedCount.ToString());
-        _console.Write(table);
+        return table;
     }
 
     private static Table CreateUsageTable()
     {
-        var table = new Table()
+        return new Table()
             .Border(TableBorder.Rounded)
             .AddColumn(string.Empty)
             .AddColumn("elapsed")
@@ -96,7 +206,12 @@ internal sealed class SpectreRunProgress : IRunProgress
             .AddColumn("completion")
             .AddColumn("steps")
             .AddColumn("failed");
-        return table;
+    }
+
+    private int MeasureHeight(IRenderable renderable)
+    {
+        var lines = Segment.SplitLines(renderable.GetSegments(_console));
+        return Math.Max(1, lines.Count);
     }
 
     private static string RenderBar(int done, int total)
