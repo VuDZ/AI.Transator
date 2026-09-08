@@ -146,7 +146,18 @@ dotnet run --project src\Ai.Translator.Cli -- glossary extract `
   --out C:\books\universe-corpus.draft.md
 ```
 
-Для каждой разрешённой пары разделов модель получает английский текст и соответствующий русский перевод. Результатом будут предложенные статьи Markdown-словаря.
+Для каждой разрешённой пары разделов модель получает английский текст и соответствующий русский перевод. Результатом будут предложенные статьи Markdown-словаря. Файл `--out` обновляется после каждого успешного раздела, а не только в самом конце.
+
+Если шлюз вернул HTTP 429/5xx, программа повторит запрос. Если и после этого запуск оборвался, в stderr будет текст ответа сервиса, а уже обработанные пары останутся в `--out`. Продолжите с теми же путями и `--resume` (work-dir по умолчанию — `universe-corpus.draft.extract.work` рядом с `--out`):
+
+```powershell
+dotnet run --project src\Ai.Translator.Cli -- glossary extract `
+  --original C:\books\en\book1_en.epub `
+  --translation C:\books\ru\book1_ru.epub `
+  --pairs C:\books\book1.pairs.txt `
+  --out C:\books\universe-corpus.draft.md `
+  --resume
+```
 
 Для дешёвой проверки можно обработать только первые несколько пар после раскрытия диапазонов:
 

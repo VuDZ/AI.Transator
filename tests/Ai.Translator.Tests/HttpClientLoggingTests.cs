@@ -123,7 +123,8 @@ public sealed class HttpClientLoggingTests
 
         public ILogger CreateLogger(string categoryName) => new CollectingLogger(categoryName, Entries);
 
-        public void Dispose() {
+        public void Dispose()
+        {
         }
     }
 
@@ -157,7 +158,8 @@ public sealed class HttpClientLoggingTests
     {
         public static NullScope Instance { get; } = new();
 
-        public void Dispose() {
+        public void Dispose()
+        {
         }
     }
 }

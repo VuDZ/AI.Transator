@@ -11,5 +11,6 @@ public interface IGlossaryExtractor
         string? model,
         IReadOnlyList<PairMapEntry>? pairMap,
         int? maxPairs,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        ExtractRunContext? run = null);
 }

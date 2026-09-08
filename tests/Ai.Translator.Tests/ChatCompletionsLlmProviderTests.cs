@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
 using Ai.Translator.Core;
@@ -224,6 +224,32 @@ public sealed class ChatCompletionsLlmProviderTests
         {
             Assert.Contains("key or gateway", ex.Message, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ServiceUnavailable_IncludesCompactGatewayBody()
+    {
+        const string payload = """
+            {
+              "error": {
+                "message": "No provider is currently available to process this request."
+              }
+            }
+            """;
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        }));
+
+        var provider = CreateProvider(handler, NoneOptions());
+        var ex = await Assert.ThrowsAsync<LlmException>(
+            () => provider.CompleteAsync(SampleRequest(), CancellationToken.None));
+
+        Assert.True(ex.IsRetryable);
+        Assert.Equal(503, ex.HttpStatusCode);
+        Assert.Contains("HTTP 503", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("No provider is currently available", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain('\n', ex.Message);
     }
 
     [Fact]

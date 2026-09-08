@@ -3,7 +3,7 @@
 public static class GlossaryExtractArguments
 {
     public const string ListPairsConflictMessage =
-        "--list-pairs cannot be combined with --out, --merge-into, or --model.";
+        "--list-pairs cannot be combined with --out, --merge-into, --model, --work-dir, or --resume.";
 
     public const string ListPairsPairsConflictMessage =
         "--list-pairs cannot be combined with --pairs.";
@@ -21,7 +21,9 @@ public static class GlossaryExtractArguments
         bool listPairs,
         string? output,
         string? mergeInto,
-        string? model)
+        string? model,
+        string? workDir = null,
+        bool resume = false)
     {
         if (!listPairs)
         {
@@ -30,7 +32,9 @@ public static class GlossaryExtractArguments
 
         return !string.IsNullOrWhiteSpace(output)
             || !string.IsNullOrWhiteSpace(mergeInto)
-            || !string.IsNullOrWhiteSpace(model);
+            || !string.IsNullOrWhiteSpace(model)
+            || !string.IsNullOrWhiteSpace(workDir)
+            || resume;
     }
 
     public static bool HasListPairsPairsConflict(bool listPairs, string? pairs)

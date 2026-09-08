@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 using Ai.Translator.Core.Options;
@@ -6,6 +6,7 @@ using Ai.Translator.Core.Progress;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Ai.Translator.Core.Llm;
 
 namespace Ai.Translator.Core.Glossary;
 
@@ -16,6 +17,15 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
 
     public const string PairTooLargeMessage =
         "A chapter pair is too large to fit the model context window.";
+
+    public const string ResumeStateMissingMessage =
+        "Cannot resume: state.json was not found in the work directory.";
+
+    public const string ResumeMismatchMessage =
+        "Cannot resume: extract inputs do not match the checkpoint. Start a new work directory or omit --resume.";
+
+    public const string ResumeOutputMissingMessage =
+        "Cannot resume: extracted Markdown was not found at the output path.";
 
     private readonly ILlmProvider _llm;
     private readonly IGlossaryParser _parser;
@@ -28,6 +38,7 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
     private readonly TimeProvider _timeProvider;
     private readonly IRunProgress _progress;
     private readonly ILogger<GlossaryExtractor> _logger;
+    private readonly IExtractCheckpointStore _checkpoints;
 
     public GlossaryExtractor(
         ILlmProvider llm,
@@ -40,7 +51,8 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
         IOptions<LlmOptions> llmOptions,
         ILogger<GlossaryExtractor>? logger = null,
         TimeProvider? timeProvider = null,
-        IRunProgress? progress = null)
+        IRunProgress? progress = null,
+        IExtractCheckpointStore? checkpoints = null)
     {
         ArgumentNullException.ThrowIfNull(llm);
         ArgumentNullException.ThrowIfNull(parser);
@@ -61,6 +73,7 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
         _logger = logger ?? NullLogger<GlossaryExtractor>.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _progress = progress ?? NullRunProgress.Instance;
+        _checkpoints = checkpoints ?? new FileExtractCheckpointStore();
     }
 
     public async Task<GlossaryDocument> ExtractAsync(
@@ -70,7 +83,8 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
         string? model,
         IReadOnlyList<PairMapEntry>? pairMap,
         int? maxPairs,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ExtractRunContext? run = null)
     {
         ArgumentNullException.ThrowIfNull(original);
         ArgumentNullException.ThrowIfNull(translation);
@@ -149,10 +163,40 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
             }
         }
 
-        var reporter = new RunProgressReporter(_progress, _timeProvider);
-        reporter.Begin(steps.Count);
+        var state = await PrepareCheckpointAsync(
+                run,
+                resolvedModel,
+                llm.ContextWindowTokens,
+                llm.ReservedOutputTokens,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var completed = new HashSet<string>(state?.CompletedSteps ?? [], StringComparer.Ordinal);
+        if (run is not null && run.Resume && completed.Count > 0)
+        {
+            result = await LoadResumedDocumentAsync(run.OutputPath, cancellationToken).ConfigureAwait(false);
+        }
 
+        var remaining = new List<(int PairIndex, EpubChapter Original, EpubChapter Translation, string OriginalFragment, string TranslationFragment, string Label)>();
         foreach (var step in steps)
+        {
+            if (!completed.Contains(step.Label))
+            {
+                remaining.Add(step);
+            }
+        }
+
+        var reporter = new RunProgressReporter(_progress, _timeProvider);
+        reporter.Begin(remaining.Count);
+
+        if (remaining.Count == 0 && run is not null)
+        {
+            await FlushAsync(result, run, state ?? CreateState(run, resolvedModel, llm.ContextWindowTokens, llm.ReservedOutputTokens), cancellationToken)
+                .ConfigureAwait(false);
+            reporter.Complete();
+            return result;
+        }
+
+        foreach (var step in remaining)
         {
             cancellationToken.ThrowIfCancellationRequested();
             reporter.StepBegin(step.Label);
@@ -165,28 +209,42 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
                 originalCount,
                 translationCount);
 
-            var response = await _llm.CompleteAsync(
-                    new LlmRequest
-                    {
-                        Model = resolvedModel,
-                        StablePrefix = prefix,
-                        VariableContent = variable,
-                        MaxOutputTokens = llm.ReservedOutputTokens,
-                        Temperature = translator.Temperature
-                    },
-                    cancellationToken)
-                .ConfigureAwait(false);
+            LlmResponse response;
+            try
+            {
+                response = await CompleteWithRetriesAsync(
+                        new LlmRequest
+                        {
+                            Model = resolvedModel,
+                            StablePrefix = prefix,
+                            VariableContent = variable,
+                            MaxOutputTokens = llm.ReservedOutputTokens,
+                            Temperature = translator.Temperature
+                        },
+                        step.Label,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (LlmException)
+            {
+                reporter.StepEnd(failed: true);
+                throw;
+            }
 
-            ArgumentNullException.ThrowIfNull(response);
             reporter.RecordResponse(response);
             reporter.StepEnd(failed: false);
             result = MergeModelOutput(result, response.Content, step.PairIndex);
+            if (run is not null)
+            {
+                state ??= CreateState(run, resolvedModel, llm.ContextWindowTokens, llm.ReservedOutputTokens);
+                state.CompletedSteps.Add(step.Label);
+                await FlushAsync(result, run, state, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         reporter.Complete();
         return result;
     }
-
     private IReadOnlyList<(EpubChapter Original, EpubChapter Translation)> ResolvePairs(
         IReadOnlyList<EpubChapter> originalChapters,
         IReadOnlyList<EpubChapter> translationChapters,
@@ -556,5 +614,143 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
         return
             $"Original [{index}/{originalCount}] {originalPath}:\n{originalText}\n\n" +
             $"Translation [{index}/{translationCount}] {translationPath}:\n{translationText}";
+    }
+    private static void EnsureResumeCompatible(
+            ExtractCheckpointState existing,
+            ExtractRunContext run,
+            string model,
+            int contextWindowTokens,
+            int reservedOutputTokens)
+    {
+        if (!PathsEqual(existing.OriginalPath, run.OriginalPath)
+            || !PathsEqual(existing.TranslationPath, run.TranslationPath)
+            || !string.Equals(existing.PairsHash, run.PairsHash, StringComparison.Ordinal)
+            || existing.MaxPairs != run.MaxPairs
+            || !PathsEqual(existing.MergeIntoPath, run.MergeIntoPath)
+            || !string.Equals(existing.Model, model, StringComparison.Ordinal)
+            || existing.ContextWindowTokens != contextWindowTokens
+            || existing.ReservedOutputTokens != reservedOutputTokens)
+        {
+            throw new InvalidOperationException(ResumeMismatchMessage);
+        }
+    }
+    private static ExtractCheckpointState CreateState(
+            ExtractRunContext run,
+            string model,
+            int contextWindowTokens,
+            int reservedOutputTokens)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        return new ExtractCheckpointState
+        {
+            OriginalPath = run.OriginalPath,
+            TranslationPath = run.TranslationPath,
+            PairsHash = run.PairsHash,
+            MaxPairs = run.MaxPairs,
+            MergeIntoPath = string.IsNullOrWhiteSpace(run.MergeIntoPath) ? null : run.MergeIntoPath,
+            Model = model,
+            ContextWindowTokens = contextWindowTokens,
+            ReservedOutputTokens = reservedOutputTokens,
+            CompletedSteps = []
+        };
+    }
+    private async Task FlushAsync(
+            GlossaryDocument document,
+            ExtractRunContext run,
+            ExtractCheckpointState state,
+            CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentNullException.ThrowIfNull(state);
+        var markdown = _writer.Write(document);
+        var directory = Path.GetDirectoryName(run.OutputPath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        await File.WriteAllTextAsync(run.OutputPath, markdown, cancellationToken).ConfigureAwait(false);
+        await _checkpoints.SaveAsync(run.WorkDir, state, cancellationToken).ConfigureAwait(false);
+    }
+    private async Task<LlmResponse> CompleteWithRetriesAsync(
+            LlmRequest request,
+            string stepLabel,
+            CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var maxAttempts = Math.Max(1, _translatorOptions.Value.MaxRetries);
+        LlmException? last = null;
+
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            if (attempt > 0)
+            {
+                var delay = TimeSpan.FromMilliseconds(100L << Math.Min(attempt - 1, 6));
+                await Task.Delay(delay, _timeProvider, cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                var response = await _llm.CompleteAsync(request, cancellationToken).ConfigureAwait(false);
+                ArgumentNullException.ThrowIfNull(response);
+                return response;
+            }
+            catch (LlmException ex) when (ex.IsRetryable)
+            {
+                last = ex;
+                _logger.LogWarning(
+                    "Extract step {Label} hit a retryable LLM error ({Attempt}/{MaxAttempts}): {Reason}",
+                    stepLabel,
+                    attempt + 1,
+                    maxAttempts,
+                    ex.Message);
+            }
+        }
+
+        throw last ?? new LlmException("Extract exhausted retries.", isRetryable: false);
+    }
+    private async Task<ExtractCheckpointState?> PrepareCheckpointAsync(
+            ExtractRunContext? run,
+            string model,
+            int contextWindowTokens,
+            int reservedOutputTokens,
+            CancellationToken cancellationToken)
+    {
+        if (run is null)
+        {
+            return null;
+        }
+
+        if (run.Resume)
+        {
+            var existing = await _checkpoints.LoadAsync(run.WorkDir, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException(ResumeStateMissingMessage);
+            EnsureResumeCompatible(existing, run, model, contextWindowTokens, reservedOutputTokens);
+            return existing;
+        }
+
+        var fresh = CreateState(run, model, contextWindowTokens, reservedOutputTokens);
+        await _checkpoints.SaveAsync(run.WorkDir, fresh, cancellationToken).ConfigureAwait(false);
+        return fresh;
+    }
+    private async Task<GlossaryDocument> LoadResumedDocumentAsync(string outputPath, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(outputPath))
+        {
+            throw new InvalidOperationException(ResumeOutputMissingMessage);
+        }
+
+        var markdown = await File.ReadAllTextAsync(outputPath, cancellationToken).ConfigureAwait(false);
+        return _parser.Parse(markdown);
+    }
+    private static bool PathsEqual(string? left, string? right)
+    {
+        if (string.IsNullOrWhiteSpace(left) && string.IsNullOrWhiteSpace(right))
+        {
+            return true;
+        }
+
+        return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
     }
 }

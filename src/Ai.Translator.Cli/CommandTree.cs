@@ -124,6 +124,14 @@ internal static class CommandTree
         {
             Description = "Send only the first N expanded pairs from --pairs. Requires --pairs."
         };
+        var workDirOption = new Option<string?>("--work-dir")
+        {
+            Description = "Working directory for extract checkpoints. Defaults to {out}.extract.work."
+        };
+        var resumeOption = new Option<bool>("--resume")
+        {
+            Description = "Resume unfinished extract steps from the working directory."
+        };
 
         var extract = new Command("extract", "Extract glossary candidates from an original and its translation.")
         {
@@ -134,7 +142,9 @@ internal static class CommandTree
             modelOption,
             listPairsOption,
             pairsOption,
-            maxPairsOption
+            maxPairsOption,
+            workDirOption,
+            resumeOption
         };
 
         extract.SetAction(async (parseResult, cancellationToken) =>
@@ -147,6 +157,8 @@ internal static class CommandTree
             var model = parseResult.GetValue(modelOption);
             var pairs = parseResult.GetValue(pairsOption);
             var maxPairs = parseResult.GetValue(maxPairsOption);
+            var workDir = parseResult.GetValue(workDirOption);
+            var resume = parseResult.GetValue(resumeOption);
             if (GlossaryExtractArguments.HasListPairsPairsConflict(listPairs, pairs))
             {
                 parseResult.InvocationConfiguration.Error.WriteLine(
@@ -154,7 +166,7 @@ internal static class CommandTree
                 return 1;
             }
 
-            if (GlossaryExtractArguments.HasListPairsConflict(listPairs, output, mergeInto, model))
+            if (GlossaryExtractArguments.HasListPairsConflict(listPairs, output, mergeInto, model, workDir, resume))
             {
                 parseResult.InvocationConfiguration.Error.WriteLine(
                     GlossaryExtractArguments.ListPairsConflictMessage);
@@ -226,7 +238,9 @@ internal static class CommandTree
                     model,
                     pairs,
                     maxPairs,
-                    cancellationToken);
+                    cancellationToken,
+                    workDir,
+                    resume);
                 return 0;
             }
             catch (Exception ex) when (ex is FileNotFoundException or GlossaryFormatException or InvalidOperationException or LlmException)

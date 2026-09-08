@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -15,6 +15,8 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
 {
     public const string MissingLocalConfigMessage =
         "LLM is not configured. Copy appsettings.Local.json.example to appsettings.Local.json and fill in Llm:BaseUrl, Llm:Model, and Llm:ApiKey.";
+
+    public const int GatewayErrorBodyLimit = 500;
 
     private static readonly JsonSerializerOptions RequestJsonOptions = new()
     {
@@ -81,7 +83,7 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
             if (status == (int)HttpStatusCode.Unauthorized || status == (int)HttpStatusCode.Forbidden)
             {
                 throw new LlmException(
-                    $"LLM rejected the API key or gateway credentials (HTTP {status}). Check Llm:ApiKey and Llm:BaseUrl in appsettings.Local.json.",
+                    FormatGatewayError(status, body, credentialsRejected: true),
                     isRetryable: false,
                     httpStatusCode: status);
             }
@@ -90,7 +92,7 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
             {
                 var retryable = status == 429 || status >= 500;
                 throw new LlmException(
-                    $"LLM gateway error (HTTP {status}).",
+                    FormatGatewayError(status, body, credentialsRejected: false),
                     isRetryable: retryable,
                     httpStatusCode: status);
             }
@@ -298,5 +300,54 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
         }
 
         return builder.ToString();
+    }
+    internal static string FormatGatewayError(int status, string? body, bool credentialsRejected)
+    {
+        var snippet = CompactErrorBody(body);
+        if (credentialsRejected)
+        {
+            var message =
+                $"LLM rejected the API key or gateway credentials (HTTP {status}). Check Llm:ApiKey and Llm:BaseUrl in appsettings.Local.json.";
+            return string.IsNullOrEmpty(snippet) ? message : message + " " + snippet;
+        }
+
+        if (string.IsNullOrEmpty(snippet))
+        {
+            return $"LLM gateway error (HTTP {status}).";
+        }
+
+        return $"LLM gateway error (HTTP {status}): {snippet}";
+    }
+    internal static string CompactErrorBody(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(Math.Min(body.Length, GatewayErrorBodyLimit));
+        var previousWhitespace = false;
+        foreach (var ch in body)
+        {
+            if (char.IsWhiteSpace(ch) || char.IsControl(ch))
+            {
+                if (!previousWhitespace && builder.Length > 0)
+                {
+                    builder.Append(' ');
+                    previousWhitespace = true;
+                }
+
+                continue;
+            }
+
+            builder.Append(ch);
+            previousWhitespace = false;
+            if (builder.Length >= GatewayErrorBodyLimit)
+            {
+                break;
+            }
+        }
+
+        return builder.ToString().Trim();
     }
 }

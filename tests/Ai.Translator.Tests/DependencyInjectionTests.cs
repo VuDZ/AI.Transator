@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using Ai.Translator.Core;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Glossary;
@@ -83,6 +83,7 @@ public sealed class DependencyInjectionTests
         Assert.NotNull(provider.GetRequiredService<IChapterChunker>());
         Assert.NotNull(provider.GetRequiredService<ITranslationValidator>());
         Assert.NotNull(provider.GetRequiredService<ICheckpointStore>());
+        Assert.IsType<FileExtractCheckpointStore>(provider.GetRequiredService<IExtractCheckpointStore>());
         Assert.IsType<ChatCompletionsLlmProvider>(provider.GetRequiredService<ILlmProvider>());
         Assert.NotNull(provider.GetRequiredService<IBookTranslationService>());
         Assert.IsType<GlossaryExtractor>(provider.GetRequiredService<IGlossaryExtractor>());

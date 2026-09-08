@@ -1,4 +1,4 @@
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Epub;
 using Ai.Translator.Core.Glossary;
@@ -62,6 +62,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IChapterChunker, ChapterChunker>();
         services.AddSingleton<ITranslationValidator, TranslationValidator>();
         services.AddSingleton<ICheckpointStore, FileCheckpointStore>();
+        services.AddSingleton<IExtractCheckpointStore, FileExtractCheckpointStore>();
         services.AddSingleton<ILlmProvider, ChatCompletionsLlmProvider>();
         services.AddSingleton<IBookTranslationService, BookTranslationService>();
         services.AddSingleton<IGlossaryExtractor, GlossaryExtractor>();

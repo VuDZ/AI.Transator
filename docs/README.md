@@ -42,6 +42,7 @@
 | [epochs/07-extract-pairs.md](epochs/07-extract-pairs.md) | extract --pairs: mapping-файл вместо индекса spine |
 | [epochs/08-send-temperature.md](epochs/08-send-temperature.md) | temperature в Chat Completions только при Llm:SendTemperature |
 | [epochs/09-cli-progress.md](epochs/09-cli-progress.md) | тихие HTTP-логи, прогресс Spectre, ETA и usage в консоли |
+| [epochs/10-extract-resume.md](epochs/10-extract-resume.md) | extract: ретраи 429/5xx, `--out` после шага, `--resume`, тело ошибки шлюза |
 
 ## Шаблон эпохи
 

@@ -1,5 +1,6 @@
 ﻿using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
+using Ai.Translator.Core.Translation;
 
 namespace Ai.Translator.Core.Glossary;
 
@@ -38,7 +39,9 @@ public sealed class GlossaryExtractService : IGlossaryExtractService
         string? model,
         string? pairsPath,
         int? maxPairs,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? workDir = null,
+        bool resume = false)
     {
         ArgumentNullException.ThrowIfNull(originalPath);
         ArgumentNullException.ThrowIfNull(translationPath);
@@ -58,6 +61,7 @@ public sealed class GlossaryExtractService : IGlossaryExtractService
         }
 
         IReadOnlyList<PairMapEntry>? pairMap = null;
+        string? pairsHash = null;
         if (!string.IsNullOrWhiteSpace(pairsPath))
         {
             if (!File.Exists(pairsPath))
@@ -67,6 +71,7 @@ public sealed class GlossaryExtractService : IGlossaryExtractService
 
             var pairsText = await File.ReadAllTextAsync(pairsPath, cancellationToken).ConfigureAwait(false);
             pairMap = _pairMapParser.Parse(pairsText);
+            pairsHash = PrefixHasher.ComputeSha256Hex(pairsText);
         }
 
         GlossaryDocument? existing = null;
@@ -83,10 +88,20 @@ public sealed class GlossaryExtractService : IGlossaryExtractService
 
         var original = await _epub.OpenAsync(originalPath, cancellationToken).ConfigureAwait(false);
         var translation = await _epub.OpenAsync(translationPath, cancellationToken).ConfigureAwait(false);
+        var run = new ExtractRunContext
+        {
+            OutputPath = outputPath,
+            WorkDir = ResolveWorkDir(outputPath, workDir),
+            Resume = resume,
+            OriginalPath = originalPath,
+            TranslationPath = translationPath,
+            PairsHash = pairsHash,
+            MaxPairs = maxPairs,
+            MergeIntoPath = string.IsNullOrWhiteSpace(mergeIntoPath) ? null : mergeIntoPath
+        };
         var extracted = await _extractor
-            .ExtractAsync(original, translation, existing, model, pairMap, maxPairs, cancellationToken)
+            .ExtractAsync(original, translation, existing, model, pairMap, maxPairs, cancellationToken, run)
             .ConfigureAwait(false);
-
         var output = _writer.Write(extracted);
         var directory = Path.GetDirectoryName(outputPath);
         if (!string.IsNullOrEmpty(directory))
@@ -96,7 +111,6 @@ public sealed class GlossaryExtractService : IGlossaryExtractService
 
         await File.WriteAllTextAsync(outputPath, output, cancellationToken).ConfigureAwait(false);
     }
-
     private static void RejectIfUnsupported(string path, string role)
     {
         if (InputPathGuard.IsPdf(path))
@@ -109,5 +123,21 @@ public sealed class GlossaryExtractService : IGlossaryExtractService
             throw new InvalidOperationException(
                 $"{role} is not an EPUB file. Provide an .epub path.");
         }
+    }
+    public static string ResolveWorkDir(string outputPath, string? workDir)
+    {
+        if (!string.IsNullOrWhiteSpace(workDir))
+        {
+            return workDir;
+        }
+
+        var outputDirectory = Path.GetDirectoryName(outputPath);
+        var name = Path.GetFileNameWithoutExtension(outputPath);
+        if (string.IsNullOrEmpty(name))
+        {
+            name = "extract";
+        }
+
+        return Path.Combine(string.IsNullOrEmpty(outputDirectory) ? "." : outputDirectory, name + ".extract.work");
     }
 }

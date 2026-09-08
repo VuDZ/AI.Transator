@@ -10,5 +10,7 @@ public interface IGlossaryExtractService
         string? model,
         string? pairsPath,
         int? maxPairs,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? workDir = null,
+        bool resume = false);
 }

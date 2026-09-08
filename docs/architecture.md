@@ -95,6 +95,7 @@ flowchart TD
 ai-translator glossary compile --corpus <md> --book <epub> --out <md>
 ai-translator glossary extract --original <epub> --translation <epub> --out <md>
             [--merge-into <corpus.md>] [--model <id>] [--pairs <file>] [--max-pairs N]
+            [--work-dir <path>] [--resume]
 ai-translator glossary extract --original <epub> --translation <epub> --list-pairs
 ai-translator translate --input <epub> --glossary <md> --out <epub>
             [--model <id>] [--work-dir <path>] [--resume]
@@ -110,6 +111,8 @@ ai-translator translate --input <epub> --glossary <md> --out <epub>
 `--list-pairs` (эпоха 06): только печать kept-пар в stdout, без LLM и без `--out`. Role-таблица — превью, не вход пайплайна.
 
 `--pairs` (эпоха 07): пары из [extract-pairs.md](extract-pairs.md). Без флага — индекс к индексу. С флагом — только mapping; главы вне файла в модель не идут. `--max-pairs N` — первые N пар после разворота файла (проверка без 40 глав). Не сочетать с `--list-pairs`. Не `--chapters` на extract.
+
+Extract `--work-dir` / `--resume` (эпоха 10): после каждого успешного фрагмента `--out` уже на диске. 429/5xx ретраятся до `MaxRetries`; после исчерпания — ошибка, пару не пропускать. `--resume` продолжает Done-шаги из `{stem}.extract.work` (дефолт рядом с `--out`). Не сочетать с `--list-pairs`. HTTP-ошибка шлюза: в тексте исключения — статус и обрезанное тело ответа.
 
 Прогресс LLM (эпоха 09): бар и usage на **stderr**. `Spectre.Console` только в Cli. Core шлёт шаги в `IRunProgress`. Категории `HttpClient` / `HttpClient.llm` — Warning, не Information.
 
