@@ -44,6 +44,7 @@
 | [epochs/09-cli-progress.md](epochs/09-cli-progress.md) | тихие HTTP-логи, прогресс Spectre, ETA и usage в консоли |
 | [epochs/10-extract-resume.md](epochs/10-extract-resume.md) | extract: ретраи 429/5xx, `--out` после шага, `--resume`, тело ошибки шлюза |
 | [epochs/11-live-progress.md](epochs/11-live-progress.md) | один живой бар+таблица usage на stderr, без ленты на каждую главу |
+| [epochs/12-protocol-english.md](epochs/12-protocol-english.md) | валидатор: протокол не считать недопереводом, в Reason — слово |
 
 ## Шаблон эпохи
 

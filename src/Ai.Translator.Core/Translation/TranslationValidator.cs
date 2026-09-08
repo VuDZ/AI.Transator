@@ -6,6 +6,8 @@ namespace Ai.Translator.Core.Translation;
 
 public sealed class TranslationValidator : ITranslationValidator
 {
+    public const string EnglishFunctionWordReasonPrefix = "English function word: ";
+
     private static readonly HashSet<string> EnglishFunctionWords = new(StringComparer.OrdinalIgnoreCase)
     {
         "the", "and", "was", "with", "that",
@@ -25,8 +27,12 @@ public sealed class TranslationValidator : ITranslationValidator
         @"<[^>]+>",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    private static readonly Regex LatinWordRegex = new(
-        @"[A-Za-z]+",
+    private static readonly Regex LatinTokenRegex = new(
+        @"[A-Za-z][A-Za-z0-9_]*",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex BinaryRunRegex = new(
+        @"[01]{8,}",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public ValidationResult Validate(string sourceChunk, LlmResponse response)
@@ -55,9 +61,10 @@ public sealed class TranslationValidator : ITranslationValidator
             return ValidationResult.Fail("Translated HTML dropped too many block elements.");
         }
 
-        if (ContainsEnglishFunctionWord(content))
+        var leaked = FindEnglishFunctionWord(content);
+        if (leaked is not null)
         {
-            return ValidationResult.Fail("Response still contains English function words.");
+            return ValidationResult.Fail(EnglishFunctionWordReasonPrefix + leaked);
         }
 
         return ValidationResult.Ok();
@@ -125,17 +132,60 @@ public sealed class TranslationValidator : ITranslationValidator
         return translatedBlocks * 2 < sourceBlocks;
     }
 
-    private static bool ContainsEnglishFunctionWord(string content)
+    private static string? FindEnglishFunctionWord(string content)
     {
-        var plain = HtmlTagRegex.Replace(content, " ");
-        foreach (Match match in LatinWordRegex.Matches(plain))
+        var plain = HtmlTagRegex.Replace(content, "\n");
+        foreach (var line in plain.Split('\n'))
         {
-            if (EnglishFunctionWords.Contains(match.Value))
+            if (IsProtocolLike(line))
             {
-                return true;
+                continue;
+            }
+
+            foreach (Match match in LatinTokenRegex.Matches(line))
+            {
+                if (EnglishFunctionWords.Contains(match.Value))
+                {
+                    return match.Value;
+                }
             }
         }
 
-        return false;
+        return null;
+    }
+
+    private static bool IsProtocolLike(string line)
+    {
+        var trimmed = line.Trim();
+        if (trimmed.Length == 0)
+        {
+            return true;
+        }
+
+        if (BinaryRunRegex.IsMatch(trimmed))
+        {
+            return true;
+        }
+
+        var digits = 0;
+        var letters = 0;
+        foreach (var ch in trimmed)
+        {
+            if (char.IsAsciiDigit(ch))
+            {
+                digits++;
+            }
+            else if (char.IsAsciiLetter(ch))
+            {
+                letters++;
+            }
+        }
+
+        if (digits >= 6 && digits * 2 >= letters)
+        {
+            return true;
+        }
+
+        return digits >= 4 && trimmed.IndexOfAny(['=', '%', '/', '>']) >= 0;
     }
 }

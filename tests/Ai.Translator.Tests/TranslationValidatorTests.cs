@@ -49,7 +49,8 @@ public sealed class TranslationValidatorTests
             new LlmResponse { Content = "<p>the blade and the war</p>", FinishReason = "stop" });
 
         Assert.False(result.IsValid);
-        Assert.Contains("English", result.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(TranslationValidator.EnglishFunctionWordReasonPrefix, result.Reason);
+        Assert.Contains("the", result.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -81,5 +82,47 @@ public sealed class TranslationValidatorTests
             new LlmResponse { Content = "<p>Привет <em>друг</em></p>", FinishReason = "stop" });
 
         Assert.True(result.IsValid, result.Reason);
+    }
+
+    [Fact]
+    public void Validate_IdentifierAStart_IsNotTreatedAsArticleA()
+    {
+        var result = _validator.Validate(
+            "<p>a_start</p>",
+            new LlmResponse { Content = "<p>Сигнал a_start принят</p>", FinishReason = "stop" });
+
+        Assert.True(result.IsValid, result.Reason);
+    }
+
+    [Fact]
+    public void Validate_MachineProtocolGibberish_Passes()
+    {
+        const string protocol =
+            """
+            <p>00011101011 HOSTILE by%? abb. 01100 orbit trajectory 66.88.345/99.34.236 then a_start=678ren</p>
+            <p>011011011 HOSTILE >40000 9r1Nt if orkoid 101 begin gggg!// 1101101110000000110100 redo from start?</p>
+            """;
+        var result = _validator.Validate(
+            protocol,
+            new LlmResponse { Content = protocol, FinishReason = "stop" });
+
+        Assert.True(result.IsValid, result.Reason);
+    }
+
+    [Fact]
+    public void Validate_ProtocolLinePlusEnglishProse_Fails()
+    {
+        var content =
+            """
+            <p>00011101011 HOSTILE by%? 011011011 redo from start?</p>
+            <p>the blade and the war</p>
+            """;
+        var result = _validator.Validate(
+            "<p>One</p><p>Two</p>",
+            new LlmResponse { Content = content, FinishReason = "stop" });
+
+        Assert.False(result.IsValid);
+        Assert.StartsWith(TranslationValidator.EnglishFunctionWordReasonPrefix, result.Reason);
+        Assert.Contains("the", result.Reason, StringComparison.OrdinalIgnoreCase);
     }
 }
