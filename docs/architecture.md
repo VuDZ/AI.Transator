@@ -114,7 +114,7 @@ ai-translator translate --input <epub> --glossary <md> --out <epub>
 
 Extract `--work-dir` / `--resume` (эпоха 10): после каждого успешного фрагмента `--out` уже на диске. 429/5xx ретраятся до `MaxRetries`; после исчерпания — ошибка, пару не пропускать. `--resume` продолжает Done-шаги из `{stem}.extract.work` (дефолт рядом с `--out`). Не сочетать с `--list-pairs`. HTTP-ошибка шлюза: в тексте исключения — статус и обрезанное тело ответа.
 
-Прогресс LLM (эпоха 09): бар и usage на **stderr**. `Spectre.Console` только в Cli. Core шлёт шаги в `IRunProgress`. Категории `HttpClient` / `HttpClient.llm` — Warning, не Information.
+Прогресс LLM (эпоха 09, живой блок — 11): бар и usage на **stderr**, одна область, не лента таблиц на шаг. `Spectre.Console` только в Cli. Core шлёт шаги в `IRunProgress`. Категории `HttpClient` / `HttpClient.llm` — Warning, не Information.
 
 ## DI и конфигурация
 
