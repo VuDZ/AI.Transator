@@ -51,6 +51,51 @@ public sealed class SpectreRunProgressTests
             "After the usage table is shown, the next redraw must cursor-up more than one line.");
     }
 
+    [Fact]
+    public void Interactive_AverageElapsed_ShowsAvgRowNotLast()
+    {
+        var (console, writer) = CreateConsole(interactive: true);
+        using var progress = new SpectreRunProgress(console);
+
+        progress.Begin(2);
+        progress.StepBegin("0001-0000,0002-0000");
+        progress.StepEnd(
+            new LlmUsageSnapshot
+            {
+                PromptTokens = 10,
+                CachedTokens = 1,
+                CompletionTokens = 2,
+                Elapsed = TimeSpan.FromSeconds(90),
+                StepCount = 1,
+                FailedCount = 0,
+                ElapsedIsAverage = true
+            },
+            Snapshot(20, 2),
+            TimeSpan.FromSeconds(30));
+        progress.Complete(Snapshot(20, 2));
+
+        var dump = writer.ToString();
+        Assert.Contains("avg", dump, StringComparison.Ordinal);
+        Assert.DoesNotContain("last", dump, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Interactive_LongInFlightLabel_TruncatesInsteadOfWrapping()
+    {
+        var (console, writer) = CreateConsole(interactive: true);
+        console.Profile.Width = 80;
+        using var progress = new SpectreRunProgress(console);
+
+        var ids = "0005-0000,0006-0000,0007-0000,0008-0000,0011-0000,0012-0000,0013-0000,0014-0000";
+        progress.Begin(57);
+        progress.StepBegin(ids);
+        progress.StepEnd(Snapshot(10, 1), Snapshot(10, 1), TimeSpan.FromMinutes(4) + TimeSpan.FromSeconds(44));
+
+        var dump = writer.ToString();
+        Assert.Contains("…", dump, StringComparison.Ordinal);
+        Assert.DoesNotContain(ids, dump, StringComparison.Ordinal);
+    }
+
     private static (IAnsiConsole Console, StringWriter Writer) CreateConsole(bool interactive)
     {
         var writer = new StringWriter();

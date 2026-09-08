@@ -156,22 +156,34 @@ internal sealed class SpectreRunProgress : IRunProgress, IDisposable
     private string BuildBarMarkup()
     {
         var eta = _eta <= TimeSpan.Zero ? "—" : FormatDuration(_eta);
-        var etaPart = $"ETA {Markup.Escape(eta)}";
-        var label = FitLabel(_label, etaPart);
+        var etaPart = $"ETA {eta}";
+        var counter = $"{_done}/{_total}";
+        var label = FitLabel(_label, counter, etaPart);
         var labelPart = string.IsNullOrEmpty(label) ? string.Empty : " " + Markup.Escape(label);
-        return $"{RenderBar(_done, _total)} [green]{_done}[/]/[grey]{_total}[/]{labelPart}  {etaPart}";
+        return $"{RenderBar(_done, _total)} [green]{_done}[/]/[grey]{_total}[/]{labelPart}  {Markup.Escape(etaPart)}";
     }
 
-    private string FitLabel(string label, string etaPart)
+    private string FitLabel(string label, string counter, string etaPart)
     {
         if (string.IsNullOrEmpty(label))
         {
             return label;
         }
 
-        var width = Math.Max(40, _console.Profile.Width);
-        var reserved = BarWidth + 1 + 8 + 2 + etaPart.Length;
-        var budget = Math.Max(0, width - reserved - 1);
+        var width = _console.Profile.Width;
+        if (width < 40)
+        {
+            width = 80;
+        }
+
+        // Leave the last column empty: Windows consoles wrap when it is written.
+        var maxVisible = Math.Max(1, width - 1);
+        var budget = maxVisible - VisibleBarLength(counter.Length, labelLength: 0, etaPart.Length);
+        if (budget <= 0)
+        {
+            return string.Empty;
+        }
+
         if (label.Length <= budget)
         {
             return label;
@@ -183,6 +195,12 @@ internal sealed class SpectreRunProgress : IRunProgress, IDisposable
         }
 
         return label[..(budget - 1)] + "…";
+    }
+
+    private static int VisibleBarLength(int counterLength, int labelLength, int etaLength)
+    {
+        var labelPart = labelLength == 0 ? 0 : 1 + labelLength;
+        return BarWidth + 1 + counterLength + labelPart + 2 + etaLength;
     }
 
     private void WriteTotalsTable(LlmUsageSnapshot totals)
@@ -203,7 +221,7 @@ internal sealed class SpectreRunProgress : IRunProgress, IDisposable
     {
         var table = CreateUsageTable();
         table.AddRow(
-            "last",
+            last.ElapsedIsAverage ? "avg" : "last",
             FormatDuration(last.Elapsed),
             last.PromptTokens.ToString(),
             FormatNullable(last.CachedTokens),

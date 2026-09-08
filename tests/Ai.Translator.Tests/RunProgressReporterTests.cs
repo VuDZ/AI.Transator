@@ -109,6 +109,29 @@ public sealed class RunProgressReporterTests
         Assert.Equal(TimeSpan.FromSeconds(2), first.Eta);
     }
 
+    [Fact]
+    public void TotalsElapsed_OverlappingSteps_IsWallClockNotSum()
+    {
+        var progress = new RecordingRunProgress();
+        var time = new ManualTimeProvider();
+        var reporter = new RunProgressReporter(progress, time, maxConcurrency: 2);
+
+        reporter.Begin(2);
+        reporter.StepBegin("a");
+        reporter.StepBegin("b");
+        time.Advance(TimeSpan.FromSeconds(2));
+        reporter.StepEnd("a", failed: false);
+        time.Advance(TimeSpan.FromSeconds(3));
+        reporter.StepEnd("b", failed: false);
+        reporter.Complete();
+
+        Assert.Equal(TimeSpan.FromSeconds(5), progress.Ends[1].Totals.Elapsed);
+        Assert.Equal(TimeSpan.FromSeconds(5), progress.CompletedTotals?.Elapsed);
+        Assert.Equal(TimeSpan.FromSeconds(2), progress.Ends[0].Last.Elapsed);
+        Assert.Equal(TimeSpan.FromTicks((TimeSpan.FromSeconds(2).Ticks + TimeSpan.FromSeconds(5).Ticks) / 2), progress.Ends[1].Last.Elapsed);
+        Assert.True(progress.Ends[1].Last.ElapsedIsAverage);
+    }
+
     private sealed class ManualTimeProvider : TimeProvider
     {
         private DateTimeOffset _utc = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);

@@ -21,7 +21,7 @@ public sealed class RunProgressReporter
     private int _promptTotal;
     private int? _cachedTotal;
     private int? _completionTotal;
-    private TimeSpan _elapsedTotal;
+    private long _runStarted;
 
     public RunProgressReporter(IRunProgress progress, TimeProvider time, int maxConcurrency = 1)
     {
@@ -41,6 +41,7 @@ public sealed class RunProgressReporter
         lock (_gate)
         {
             _total = totalSteps;
+            _runStarted = _time.GetTimestamp();
             _planOrder.Clear();
             if (planOrder is not null)
             {
@@ -132,7 +133,6 @@ public sealed class RunProgressReporter
             : _time.GetTimestamp();
         var elapsed = _time.GetElapsedTime(started);
         _durations.Add(elapsed);
-        _elapsedTotal += elapsed;
         _completed++;
         if (failed)
         {
@@ -142,14 +142,16 @@ public sealed class RunProgressReporter
         _inFlight.Remove(stepId);
         _lastByStep.TryGetValue(stepId, out var lastResponse);
 
+        var showAverage = _maxConcurrency > 1;
         var last = new LlmUsageSnapshot
         {
             PromptTokens = lastResponse?.PromptTokens ?? 0,
             CachedTokens = lastResponse?.CachedTokens,
             CompletionTokens = lastResponse?.CompletionTokens,
-            Elapsed = elapsed,
+            Elapsed = showAverage ? AverageDuration() : elapsed,
             StepCount = 1,
-            FailedCount = failed ? 1 : 0
+            FailedCount = failed ? 1 : 0,
+            ElapsedIsAverage = showAverage
         };
 
         var remaining = Math.Max(0, _total - _completed);
@@ -198,12 +200,29 @@ public sealed class RunProgressReporter
         return TimeSpan.FromTicks(checked((long)(averageTicks * waves)));
     }
 
+    private TimeSpan AverageDuration()
+    {
+        if (_durations.Count == 0)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var averageTicks = 0d;
+        foreach (var duration in _durations)
+        {
+            averageTicks += duration.Ticks;
+        }
+
+        averageTicks /= _durations.Count;
+        return TimeSpan.FromTicks(checked((long)averageTicks));
+    }
+
     private LlmUsageSnapshot CreateTotals() => new()
     {
         PromptTokens = _promptTotal,
         CachedTokens = _cachedTotal,
         CompletionTokens = _completionTotal,
-        Elapsed = _elapsedTotal,
+        Elapsed = _time.GetElapsedTime(_runStarted),
         StepCount = _completed,
         FailedCount = _failed
     };

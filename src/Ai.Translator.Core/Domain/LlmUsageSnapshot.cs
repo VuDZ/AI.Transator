@@ -1,4 +1,4 @@
-namespace Ai.Translator.Core.Domain;
+﻿namespace Ai.Translator.Core.Domain;
 
 public sealed class LlmUsageSnapshot
 {
@@ -13,4 +13,6 @@ public sealed class LlmUsageSnapshot
     public int StepCount { get; init; }
 
     public int FailedCount { get; init; }
+
+    public bool ElapsedIsAverage { get; init; }
 }
