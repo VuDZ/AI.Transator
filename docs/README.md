@@ -45,6 +45,7 @@
 | [epochs/10-extract-resume.md](epochs/10-extract-resume.md) | extract: ретраи 429/5xx, `--out` после шага, `--resume`, тело ошибки шлюза |
 | [epochs/11-live-progress.md](epochs/11-live-progress.md) | один живой бар+таблица usage на stderr, без ленты на каждую главу |
 | [epochs/12-protocol-english.md](epochs/12-protocol-english.md) | валидатор: протокол не считать недопереводом, в Reason — слово |
+| [epochs/13-translate-concurrency.md](epochs/13-translate-concurrency.md) | translate: несколько чанков в модель сразу, `--concurrency` |
 
 ## Шаблон эпохи
 

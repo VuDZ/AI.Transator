@@ -99,7 +99,7 @@ ai-translator glossary extract --original <epub> --translation <epub> --out <md>
 ai-translator glossary extract --original <epub> --translation <epub> --list-pairs
 ai-translator translate --input <epub> --glossary <md> --out <epub>
             [--model <id>] [--work-dir <path>] [--resume]
-            [--chapters <n>|<from>-<to>]
+            [--chapters <n>|<from>-<to>] [--concurrency <1-8>]
 ```
 
 `--chapters` — 1-based индекс в reading order (spine), включительно. Одна глава (`3`) или диапазон (`2-4`). Без флага — вся книга.
@@ -115,6 +115,8 @@ ai-translator translate --input <epub> --glossary <md> --out <epub>
 Extract `--work-dir` / `--resume` (эпоха 10): после каждого успешного фрагмента `--out` уже на диске. 429/5xx ретраятся до `MaxRetries`; после исчерпания — ошибка, пару не пропускать. `--resume` продолжает Done-шаги из `{stem}.extract.work` (дефолт рядом с `--out`). Не сочетать с `--list-pairs`. HTTP-ошибка шлюза: в тексте исключения — статус и обрезанное тело ответа.
 
 Прогресс LLM (эпоха 09, живой блок — 11): бар и usage на **stderr**, одна область, не лента таблиц на шаг. `Spectre.Console` только в Cli. Core шлёт шаги в `IRunProgress`. Категории `HttpClient` / `HttpClient.llm` — Warning, не Information.
+
+Параллельный translate (эпоха 13): `Translator:MaxConcurrency` дефолт 2 (1–8), `--concurrency` на `translate`. Первый оставшийся чанк один (прогрев кеша префикса), затем до N одновременных `CompleteAsync`. Extract не параллелить. Вызовы `IRunProgress` сериализовать в Core. `state.json` / `candidates.md` — один писатель. ETA — среднее шага × ceil(осталось / ширина пула). У Provod лимит — резерв баланса на каждый in-flight, не RPM; `402` не ретраить.
 
 ## DI и конфигурация
 
