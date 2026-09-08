@@ -700,11 +700,297 @@ public sealed class BookTranslationServiceTests
         }
     }
 
+    [Fact]
+    public async Task RunAsync_MaxConcurrency2_AfterWarmup_StartsBothRemainingBeforeEitherCompletes()
+    {
+        var root = NewRoot();
+        try
+        {
+            var input = MinimalEpubFactory.Create(
+                root,
+                "<p>Alpha</p>",
+                "<p>Beta</p>",
+                "<p>Gamma</p>");
+            var glossary = await WriteGlossaryAsync(root);
+            var output = Path.Combine(root, "out.epub");
+            var workDir = Path.Combine(root, "work");
+            var betaEntered = NewTcs();
+            var gammaEntered = NewTcs();
+            var betaRelease = NewTcs();
+            var gammaRelease = NewTcs();
+            var llm = new Mock<ILlmProvider>(MockBehavior.Strict);
+            llm.Setup(x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()))
+                .Returns(async (LlmRequest req, CancellationToken ct) =>
+                {
+                    if (req.VariableContent.Contains("Alpha", StringComparison.Ordinal))
+                    {
+                        return Ok("<p>Альфа</p>");
+                    }
+
+                    if (req.VariableContent.Contains("Beta", StringComparison.Ordinal))
+                    {
+                        betaEntered.TrySetResult();
+                        await betaRelease.Task.WaitAsync(ct);
+                        return Ok("<p>Бета</p>");
+                    }
+
+                    if (req.VariableContent.Contains("Gamma", StringComparison.Ordinal))
+                    {
+                        gammaEntered.TrySetResult();
+                        await gammaRelease.Task.WaitAsync(ct);
+                        return Ok("<p>Гамма</p>");
+                    }
+
+                    throw new InvalidOperationException("Unexpected chunk.");
+                });
+
+            var run = CreateService(llm.Object, maxConcurrency: 2).RunAsync(
+                Job(input, glossary, output, workDir),
+                CancellationToken.None);
+
+            await Task.WhenAll(betaEntered.Task, gammaEntered.Task).WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.False(run.IsCompleted);
+            betaRelease.TrySetResult();
+            gammaRelease.TrySetResult();
+
+            var result = await run.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.False(result.HasFailures);
+            var book = await new EpubBookService().OpenAsync(output, CancellationToken.None);
+            Assert.Contains("Альфа", book.Chapters[0].PlainText, StringComparison.Ordinal);
+            Assert.Contains("Бета", book.Chapters[1].PlainText, StringComparison.Ordinal);
+            Assert.Contains("Гамма", book.Chapters[2].PlainText, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_MaxConcurrency1_DoesNotStartNextUntilCurrentReturns()
+    {
+        var root = NewRoot();
+        try
+        {
+            var input = MinimalEpubFactory.Create(
+                root,
+                "<p>Alpha</p>",
+                "<p>Beta</p>",
+                "<p>Gamma</p>");
+            var glossary = await WriteGlossaryAsync(root);
+            var output = Path.Combine(root, "out.epub");
+            var workDir = Path.Combine(root, "work");
+            var alphaEntered = NewTcs();
+            var alphaRelease = NewTcs();
+            var betaEntered = NewTcs();
+            var betaRelease = NewTcs();
+            var gammaEntered = NewTcs();
+            var llm = new Mock<ILlmProvider>(MockBehavior.Strict);
+            llm.Setup(x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()))
+                .Returns(async (LlmRequest req, CancellationToken ct) =>
+                {
+                    if (req.VariableContent.Contains("Alpha", StringComparison.Ordinal))
+                    {
+                        alphaEntered.TrySetResult();
+                        await alphaRelease.Task.WaitAsync(ct);
+                        return Ok("<p>Альфа</p>");
+                    }
+
+                    if (req.VariableContent.Contains("Beta", StringComparison.Ordinal))
+                    {
+                        betaEntered.TrySetResult();
+                        await betaRelease.Task.WaitAsync(ct);
+                        return Ok("<p>Бета</p>");
+                    }
+
+                    if (req.VariableContent.Contains("Gamma", StringComparison.Ordinal))
+                    {
+                        gammaEntered.TrySetResult();
+                        return Ok("<p>Гамма</p>");
+                    }
+
+                    throw new InvalidOperationException("Unexpected chunk.");
+                });
+
+            var run = CreateService(llm.Object, maxConcurrency: 1).RunAsync(
+                Job(input, glossary, output, workDir),
+                CancellationToken.None);
+
+            await alphaEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.False(betaEntered.Task.IsCompleted);
+            Assert.False(gammaEntered.Task.IsCompleted);
+            alphaRelease.TrySetResult();
+
+            await betaEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.False(gammaEntered.Task.IsCompleted);
+            betaRelease.TrySetResult();
+
+            var result = await run.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.False(result.HasFailures);
+            Assert.True(gammaEntered.Task.IsCompleted);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_ThreeRemaining_WarmupBlocksSecondAndThird()
+    {
+        var root = NewRoot();
+        try
+        {
+            var input = MinimalEpubFactory.Create(
+                root,
+                "<p>Alpha</p>",
+                "<p>Beta</p>",
+                "<p>Gamma</p>");
+            var glossary = await WriteGlossaryAsync(root);
+            var output = Path.Combine(root, "out.epub");
+            var workDir = Path.Combine(root, "work");
+            var alphaEntered = NewTcs();
+            var alphaRelease = NewTcs();
+            var laterEntered = NewTcs();
+            var llm = new Mock<ILlmProvider>(MockBehavior.Strict);
+            llm.Setup(x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()))
+                .Returns(async (LlmRequest req, CancellationToken ct) =>
+                {
+                    if (req.VariableContent.Contains("Alpha", StringComparison.Ordinal))
+                    {
+                        alphaEntered.TrySetResult();
+                        await alphaRelease.Task.WaitAsync(ct);
+                        return Ok("<p>Альфа</p>");
+                    }
+
+                    laterEntered.TrySetResult();
+                    if (req.VariableContent.Contains("Beta", StringComparison.Ordinal))
+                    {
+                        return Ok("<p>Бета</p>");
+                    }
+
+                    return Ok("<p>Гамма</p>");
+                });
+
+            var run = CreateService(llm.Object, maxConcurrency: 2).RunAsync(
+                Job(input, glossary, output, workDir),
+                CancellationToken.None);
+
+            await alphaEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.False(laterEntered.Task.IsCompleted);
+            alphaRelease.TrySetResult();
+
+            var result = await run.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.False(result.HasFailures);
+            Assert.True(laterEntered.Task.IsCompleted);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(9)]
+    public async Task RunAsync_ConcurrencyOutOfRange_FailsBeforeLlm(int concurrency)
+    {
+        var root = NewRoot();
+        try
+        {
+            var input = MinimalEpubFactory.Create(root, "<p>Alpha</p>");
+            var glossary = await WriteGlossaryAsync(root);
+            var output = Path.Combine(root, "out.epub");
+            var workDir = Path.Combine(root, "work");
+            var llm = new Mock<ILlmProvider>(MockBehavior.Strict);
+
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                CreateService(llm.Object).RunAsync(
+                    Job(input, glossary, output, workDir, concurrency: concurrency),
+                    CancellationToken.None));
+
+            Assert.Contains("1", ex.Message, StringComparison.Ordinal);
+            Assert.Contains("8", ex.Message, StringComparison.Ordinal);
+            llm.Verify(
+                x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_TwoParallelSuccesses_WritesDoneStateAndEpub()
+    {
+        var root = NewRoot();
+        try
+        {
+            var input = MinimalEpubFactory.Create(
+                root,
+                "<p>Alpha</p>",
+                "<p>Beta</p>",
+                "<p>Gamma</p>");
+            var glossary = await WriteGlossaryAsync(root);
+            var output = Path.Combine(root, "out.epub");
+            var workDir = Path.Combine(root, "work");
+            var betaEntered = NewTcs();
+            var gammaEntered = NewTcs();
+            var release = NewTcs();
+            var llm = new Mock<ILlmProvider>(MockBehavior.Strict);
+            llm.Setup(x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()))
+                .Returns(async (LlmRequest req, CancellationToken ct) =>
+                {
+                    if (req.VariableContent.Contains("Alpha", StringComparison.Ordinal))
+                    {
+                        return Ok("<p>Альфа</p>");
+                    }
+
+                    if (req.VariableContent.Contains("Beta", StringComparison.Ordinal))
+                    {
+                        betaEntered.TrySetResult();
+                        await release.Task.WaitAsync(ct);
+                        return Ok("<p>Бета</p>");
+                    }
+
+                    gammaEntered.TrySetResult();
+                    await release.Task.WaitAsync(ct);
+                    return Ok("<p>Гамма</p>");
+                });
+
+            var run = CreateService(llm.Object, maxConcurrency: 2).RunAsync(
+                Job(input, glossary, output, workDir),
+                CancellationToken.None);
+
+            await Task.WhenAll(betaEntered.Task, gammaEntered.Task).WaitAsync(TimeSpan.FromSeconds(15));
+            release.TrySetResult();
+            var result = await run.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.False(result.HasFailures);
+
+            var stateJson = await File.ReadAllTextAsync(Path.Combine(workDir, "state.json"));
+            var state = JsonSerializer.Deserialize<TranslationCheckpointState>(stateJson);
+            Assert.NotNull(state);
+            Assert.Equal(3, state.Chunks.Count);
+            Assert.All(state.Chunks, chunk => Assert.Equal(ChunkStatuses.Done, chunk.Status));
+
+            var book = await new EpubBookService().OpenAsync(output, CancellationToken.None);
+            Assert.Contains("Альфа", book.Chapters[0].PlainText, StringComparison.Ordinal);
+            Assert.Contains("Бета", book.Chapters[1].PlainText, StringComparison.Ordinal);
+            Assert.Contains("Гамма", book.Chapters[2].PlainText, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
     private static BookTranslationService CreateService(
         ILlmProvider llm,
         int maxRetries = 3,
         StyleRulesLoader? styleRulesLoader = null,
-        IRunProgress? progress = null)
+        IRunProgress? progress = null,
+        int maxConcurrency = 2)
     {
         return new BookTranslationService(
             new EpubBookService(),
@@ -719,7 +1005,8 @@ public sealed class BookTranslationServiceTests
             {
                 MaxRetries = maxRetries,
                 Temperature = 0.1,
-                StyleRules = "Translate to Russian. Keep HTML."
+                StyleRules = "Translate to Russian. Keep HTML.",
+                MaxConcurrency = maxConcurrency
             }),
             Options.Create(new LlmOptions
             {
@@ -737,15 +1024,20 @@ public sealed class BookTranslationServiceTests
         string glossary,
         string output,
         string workDir,
-        string? chapters = null) =>
+        string? chapters = null,
+        int? concurrency = null) =>
         new()
         {
             InputPath = input,
             GlossaryPath = glossary,
             OutputPath = output,
             WorkDir = workDir,
-            Chapters = chapters
+            Chapters = chapters,
+            Concurrency = concurrency
         };
+
+    private static TaskCompletionSource NewTcs() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private static Mock<ILlmProvider> CreateMappingLlm(Func<LlmRequest, LlmResponse> map)
     {

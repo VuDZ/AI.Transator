@@ -1,4 +1,4 @@
-using Ai.Translator.Core.Abstractions;
+﻿using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 using Ai.Translator.Core.Progress;
 
@@ -90,6 +90,23 @@ public sealed class RunProgressReporterTests
         Assert.Equal(1, progress.Ends[0].Last.FailedCount);
         Assert.Equal(1, progress.Ends[0].Totals.FailedCount);
         Assert.Equal(1, progress.CompletedTotals?.FailedCount);
+    }
+
+    [Fact]
+    public void Eta_AfterWarmupWithConcurrency2_UsesWaveCount()
+    {
+        var progress = new RecordingRunProgress();
+        var time = new ManualTimeProvider();
+        var reporter = new RunProgressReporter(progress, time, maxConcurrency: 2);
+
+        reporter.Begin(3);
+        reporter.StepBegin("a");
+        time.Advance(TimeSpan.FromSeconds(2));
+        reporter.RecordResponse(new LlmResponse { PromptTokens = 10, CompletionTokens = 3 });
+        reporter.StepEnd(failed: false);
+
+        var first = Assert.Single(progress.Ends);
+        Assert.Equal(TimeSpan.FromSeconds(2), first.Eta);
     }
 
     private sealed class ManualTimeProvider : TimeProvider

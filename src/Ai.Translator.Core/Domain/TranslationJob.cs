@@ -1,4 +1,4 @@
-namespace Ai.Translator.Core.Domain;
+﻿namespace Ai.Translator.Core.Domain;
 
 public sealed class TranslationJob
 {
@@ -15,4 +15,6 @@ public sealed class TranslationJob
     public bool Resume { get; init; }
 
     public string? Chapters { get; init; }
+
+    public int? Concurrency { get; init; }
 }

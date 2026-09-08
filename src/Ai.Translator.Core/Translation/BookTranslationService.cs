@@ -94,6 +94,9 @@ public sealed class BookTranslationService : IBookTranslationService
         ArgumentNullException.ThrowIfNull(translator);
         ArgumentNullException.ThrowIfNull(llm);
 
+        var maxConcurrency = job.Concurrency ?? translator.MaxConcurrency;
+        TranslatorOptions.EnsureConcurrencyInRange(maxConcurrency);
+
         if (llm.ContextWindowTokens <= 0)
         {
             throw new InvalidOperationException(
@@ -187,57 +190,23 @@ public sealed class BookTranslationService : IBookTranslationService
             remainingChunks.Add(chunk);
         }
 
-        var reporter = new RunProgressReporter(_progress, _timeProvider);
-        reporter.Begin(remainingChunks.Count);
-
-        foreach (var chunk in remainingChunks)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var checkpoint = statusById[chunk.Id];
-            reporter.StepBegin(chunk.Id);
-            var translated = await TranslateChunkAsync(
-                    chunk,
-                    prefix,
-                    prefixTokens,
-                    model,
-                    translator,
-                    llm,
-                    workDir,
-                    reporter,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            reporter.StepEnd(translated is null);
-
-            if (translated is null)
-            {
-                checkpoint.Status = ChunkStatuses.Failed;
-                translations[chunk.Id] = chunk.SourceHtml;
-            }
-            else
-            {
-                checkpoint.Status = ChunkStatuses.Done;
-                translations[chunk.Id] = translated;
-                await _checkpoints.WriteChunkTranslatedAsync(workDir, chunk.Id, translated, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            foreach (var term in _candidates.Extract(chunk.SourceHtml, working))
-            {
-                if (seenCandidates.Add(term))
-                {
-                    candidateTerms.Add(term);
-                }
-            }
-
-            await _checkpoints.SaveAsync(workDir, state, cancellationToken).ConfigureAwait(false);
-            await _checkpoints.WriteCandidatesAsync(
-                    workDir,
-                    TermCandidateExtractor.ToMarkdown(candidateTerms),
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        reporter.Complete();
+        await TranslateRemainingChunksAsync(
+                remainingChunks,
+                maxConcurrency,
+                prefix,
+                prefixTokens,
+                model,
+                translator,
+                llm,
+                workDir,
+                working,
+                state,
+                statusById,
+                translations,
+                candidateTerms,
+                seenCandidates,
+                cancellationToken)
+            .ConfigureAwait(false);
 
         var replacements = BuildReplacements(planned, translations);
         await _epub.WriteCopyAsync(job.InputPath, job.OutputPath, replacements, cancellationToken)
@@ -326,7 +295,7 @@ public sealed class BookTranslationService : IBookTranslationService
 
                 var response = await _llm.CompleteAsync(request, cancellationToken).ConfigureAwait(false);
                 ArgumentNullException.ThrowIfNull(response);
-                reporter.RecordResponse(response);
+                reporter.RecordResponse(chunk.Id, response);
                 _logger.LogInformation(
                     "Chunk {ChunkId} attempt {Attempt}/{MaxAttempts}: ~{PrefixTokens} prefix tokens, ~{ContentTokens} content tokens, cached {CachedTokens}.",
                     chunk.Id,
@@ -583,5 +552,156 @@ public sealed class BookTranslationService : IBookTranslationService
         }
 
         return ChapterRangeParser.Parse(spec, chapterCount);
+    }
+    private async Task TranslateRemainingChunksAsync(
+            IReadOnlyList<TranslationChunk> remainingChunks,
+            int maxConcurrency,
+            string prefix,
+            int prefixTokens,
+            string model,
+            TranslatorOptions translator,
+            LlmOptions llm,
+            string workDir,
+            GlossaryDocument working,
+            TranslationCheckpointState state,
+            Dictionary<string, ChunkCheckpoint> statusById,
+            Dictionary<string, string> translations,
+            List<string> candidateTerms,
+            HashSet<string> seenCandidates,
+            CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remainingChunks);
+        ArgumentNullException.ThrowIfNull(working);
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(statusById);
+        ArgumentNullException.ThrowIfNull(translations);
+        ArgumentNullException.ThrowIfNull(candidateTerms);
+        ArgumentNullException.ThrowIfNull(seenCandidates);
+
+        var planOrder = new List<string>(remainingChunks.Count);
+        foreach (var chunk in remainingChunks)
+        {
+            planOrder.Add(chunk.Id);
+        }
+
+        var reporter = new RunProgressReporter(_progress, _timeProvider, maxConcurrency);
+        reporter.Begin(remainingChunks.Count, planOrder);
+        using var persistGate = new SemaphoreSlim(1, 1);
+
+        async Task RunOneAsync(TranslationChunk chunk)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            reporter.StepBegin(chunk.Id);
+            var translated = await TranslateChunkAsync(
+                    chunk,
+                    prefix,
+                    prefixTokens,
+                    model,
+                    translator,
+                    llm,
+                    workDir,
+                    reporter,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            reporter.StepEnd(chunk.Id, translated is null);
+
+            if (translated is not null)
+            {
+                await _checkpoints.WriteChunkTranslatedAsync(workDir, chunk.Id, translated, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await persistGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var checkpoint = statusById[chunk.Id];
+                if (translated is null)
+                {
+                    checkpoint.Status = ChunkStatuses.Failed;
+                    translations[chunk.Id] = chunk.SourceHtml;
+                }
+                else
+                {
+                    checkpoint.Status = ChunkStatuses.Done;
+                    translations[chunk.Id] = translated;
+                }
+
+                foreach (var term in _candidates.Extract(chunk.SourceHtml, working))
+                {
+                    if (seenCandidates.Add(term))
+                    {
+                        candidateTerms.Add(term);
+                    }
+                }
+
+                await _checkpoints.SaveAsync(workDir, state, cancellationToken).ConfigureAwait(false);
+                await _checkpoints.WriteCandidatesAsync(
+                        workDir,
+                        TermCandidateExtractor.ToMarkdown(candidateTerms),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                persistGate.Release();
+            }
+        }
+
+        if (remainingChunks.Count > 0)
+        {
+            await RunOneAsync(remainingChunks[0]).ConfigureAwait(false);
+
+            if (remainingChunks.Count > 1)
+            {
+                var rest = new List<TranslationChunk>(remainingChunks.Count - 1);
+                for (var i = 1; i < remainingChunks.Count; i++)
+                {
+                    rest.Add(remainingChunks[i]);
+                }
+
+                var next = 0;
+                var running = new List<Task>(Math.Min(maxConcurrency, rest.Count));
+                Exception? fault = null;
+
+                void StartNext()
+                {
+                    var chunk = rest[next];
+                    next++;
+                    running.Add(RunOneAsync(chunk));
+                }
+
+                while (running.Count < maxConcurrency && next < rest.Count)
+                {
+                    StartNext();
+                }
+
+                while (running.Count > 0)
+                {
+                    var finished = await Task.WhenAny(running).ConfigureAwait(false);
+                    running.Remove(finished);
+                    try
+                    {
+                        await finished.ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        fault ??= ex;
+                        continue;
+                    }
+
+                    if (fault is null && next < rest.Count)
+                    {
+                        StartNext();
+                    }
+                }
+
+                if (fault is not null)
+                {
+                    throw fault;
+                }
+            }
+        }
+
+        reporter.Complete();
     }
 }

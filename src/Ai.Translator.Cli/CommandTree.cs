@@ -1,4 +1,4 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using Ai.Translator.Core;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
@@ -287,6 +287,10 @@ internal static class CommandTree
         {
             Description = "1-based spine index or inclusive range, e.g. 3 or 2-4."
         };
+        var concurrencyOption = new Option<int?>("--concurrency")
+        {
+            Description = "Max in-flight translation chunks after prefix cache warmup (1-8)."
+        };
 
         var translate = new Command("translate", "Translate an EPUB using a working glossary.")
         {
@@ -296,7 +300,8 @@ internal static class CommandTree
             modelOption,
             workDirOption,
             resumeOption,
-            chaptersOption
+            chaptersOption,
+            concurrencyOption
         };
 
         translate.SetAction(async (parseResult, cancellationToken) =>
@@ -330,7 +335,8 @@ internal static class CommandTree
                         Model = parseResult.GetValue(modelOption),
                         WorkDir = parseResult.GetValue(workDirOption),
                         Resume = parseResult.GetValue(resumeOption),
-                        Chapters = parseResult.GetValue(chaptersOption)
+                        Chapters = parseResult.GetValue(chaptersOption),
+                        Concurrency = parseResult.GetValue(concurrencyOption)
                     },
                     cancellationToken);
                 return result.HasFailures ? 1 : 0;

@@ -1,4 +1,4 @@
-using Ai.Translator.Core.Abstractions;
+﻿using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 
 namespace Ai.Translator.Core.Progress;
@@ -7,52 +7,130 @@ public sealed class RunProgressReporter
 {
     private readonly IRunProgress _progress;
     private readonly TimeProvider _time;
+    private readonly int _maxConcurrency;
+    private readonly object _gate = new();
     private readonly List<TimeSpan> _durations = [];
+    private readonly List<string> _planOrder = [];
+    private readonly HashSet<string> _inFlight = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, long> _started = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, LlmResponse> _lastByStep = new(StringComparer.Ordinal);
     private int _total;
     private int _completed;
     private int _failed;
-    private long _stepStarted;
-    private LlmResponse? _lastResponse;
+    private string? _lastStepId;
     private int _promptTotal;
     private int? _cachedTotal;
     private int? _completionTotal;
     private TimeSpan _elapsedTotal;
 
-    public RunProgressReporter(IRunProgress progress, TimeProvider time)
+    public RunProgressReporter(IRunProgress progress, TimeProvider time, int maxConcurrency = 1)
     {
         ArgumentNullException.ThrowIfNull(progress);
         ArgumentNullException.ThrowIfNull(time);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxConcurrency, 1);
         _progress = progress;
         _time = time;
+        _maxConcurrency = maxConcurrency;
     }
 
-    public void Begin(int totalSteps)
+    public void Begin(int totalSteps) => Begin(totalSteps, planOrder: null);
+
+    public void Begin(int totalSteps, IReadOnlyList<string>? planOrder)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(totalSteps);
-        _total = totalSteps;
-        _progress.Begin(totalSteps);
+        lock (_gate)
+        {
+            _total = totalSteps;
+            _planOrder.Clear();
+            if (planOrder is not null)
+            {
+                foreach (var id in planOrder)
+                {
+                    ArgumentNullException.ThrowIfNull(id);
+                    _planOrder.Add(id);
+                }
+            }
+
+            _progress.Begin(totalSteps);
+        }
     }
 
     public void StepBegin(string label)
     {
         ArgumentNullException.ThrowIfNull(label);
-        _lastResponse = null;
-        _stepStarted = _time.GetTimestamp();
-        _progress.StepBegin(label);
+        lock (_gate)
+        {
+            StartStep_NoLock(label);
+            _lastStepId = label;
+            _progress.StepBegin(FormatInFlight_NoLock());
+        }
     }
 
     public void RecordResponse(LlmResponse response)
     {
         ArgumentNullException.ThrowIfNull(response);
-        _lastResponse = response;
+        lock (_gate)
+        {
+            RecordResponse_NoLock(_lastStepId ?? string.Empty, response);
+        }
+    }
+
+    public void RecordResponse(string stepId, LlmResponse response)
+    {
+        ArgumentNullException.ThrowIfNull(stepId);
+        ArgumentNullException.ThrowIfNull(response);
+        lock (_gate)
+        {
+            RecordResponse_NoLock(stepId, response);
+        }
+    }
+
+    public void StepEnd(bool failed)
+    {
+        lock (_gate)
+        {
+            EndStep_NoLock(_lastStepId ?? string.Empty, failed);
+        }
+    }
+
+    public void StepEnd(string stepId, bool failed)
+    {
+        ArgumentNullException.ThrowIfNull(stepId);
+        lock (_gate)
+        {
+            EndStep_NoLock(stepId, failed);
+        }
+    }
+
+    public void Complete()
+    {
+        lock (_gate)
+        {
+            _progress.Complete(CreateTotals());
+        }
+    }
+
+    private void StartStep_NoLock(string stepId)
+    {
+        _inFlight.Add(stepId);
+        _started[stepId] = _time.GetTimestamp();
+        _lastByStep.Remove(stepId);
+    }
+
+    private void RecordResponse_NoLock(string stepId, LlmResponse response)
+    {
+        _lastByStep[stepId] = response;
         _promptTotal += response.PromptTokens;
         _cachedTotal = AddNullable(_cachedTotal, response.CachedTokens);
         _completionTotal = AddNullable(_completionTotal, response.CompletionTokens);
     }
 
-    public void StepEnd(bool failed)
+    private void EndStep_NoLock(string stepId, bool failed)
     {
-        var elapsed = _time.GetElapsedTime(_stepStarted);
+        var started = _started.TryGetValue(stepId, out var timestamp)
+            ? timestamp
+            : _time.GetTimestamp();
+        var elapsed = _time.GetElapsedTime(started);
         _durations.Add(elapsed);
         _elapsedTotal += elapsed;
         _completed++;
@@ -61,11 +139,14 @@ public sealed class RunProgressReporter
             _failed++;
         }
 
+        _inFlight.Remove(stepId);
+        _lastByStep.TryGetValue(stepId, out var lastResponse);
+
         var last = new LlmUsageSnapshot
         {
-            PromptTokens = _lastResponse?.PromptTokens ?? 0,
-            CachedTokens = _lastResponse?.CachedTokens,
-            CompletionTokens = _lastResponse?.CompletionTokens,
+            PromptTokens = lastResponse?.PromptTokens ?? 0,
+            CachedTokens = lastResponse?.CachedTokens,
+            CompletionTokens = lastResponse?.CompletionTokens,
             Elapsed = elapsed,
             StepCount = 1,
             FailedCount = failed ? 1 : 0
@@ -73,11 +154,29 @@ public sealed class RunProgressReporter
 
         var remaining = Math.Max(0, _total - _completed);
         _progress.StepEnd(last, CreateTotals(), ComputeEta(remaining));
+        if (_inFlight.Count > 0)
+        {
+            _progress.StepBegin(FormatInFlight_NoLock());
+        }
     }
 
-    public void Complete()
+    private string FormatInFlight_NoLock()
     {
-        _progress.Complete(CreateTotals());
+        if (_planOrder.Count > 0)
+        {
+            var ordered = new List<string>(_inFlight.Count);
+            foreach (var id in _planOrder)
+            {
+                if (_inFlight.Contains(id))
+                {
+                    ordered.Add(id);
+                }
+            }
+
+            return string.Join(",", ordered);
+        }
+
+        return string.Join(",", _inFlight);
     }
 
     private TimeSpan ComputeEta(int remaining)
@@ -94,7 +193,9 @@ public sealed class RunProgressReporter
         }
 
         averageTicks /= _durations.Count;
-        return TimeSpan.FromTicks(checked((long)(averageTicks * remaining)));
+        var width = Math.Max(1, Math.Min(_maxConcurrency, remaining));
+        var waves = (int)Math.Ceiling(remaining / (double)width);
+        return TimeSpan.FromTicks(checked((long)(averageTicks * waves)));
     }
 
     private LlmUsageSnapshot CreateTotals() => new()

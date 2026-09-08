@@ -55,6 +55,7 @@ public sealed class DependencyInjectionTests
         Assert.Equal("ru", translator.TargetLanguage);
         Assert.Equal(2, translator.MaxRetries);
         Assert.Equal(0.1, translator.Temperature);
+        Assert.Equal(2, translator.MaxConcurrency);
 
         var llm = provider.GetRequiredService<IOptions<LlmOptions>>().Value;
         Assert.Equal("http://localhost:11434/v1", llm.BaseUrl);
