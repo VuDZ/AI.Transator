@@ -12,5 +12,6 @@ public interface IGlossaryExtractService
         int? maxPairs,
         CancellationToken cancellationToken,
         string? workDir = null,
-        bool resume = false);
+        bool resume = false,
+        int? concurrency = null);
 }

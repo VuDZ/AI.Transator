@@ -41,11 +41,17 @@ public sealed class GlossaryExtractService : IGlossaryExtractService
         int? maxPairs,
         CancellationToken cancellationToken,
         string? workDir = null,
-        bool resume = false)
+        bool resume = false,
+        int? concurrency = null)
     {
         ArgumentNullException.ThrowIfNull(originalPath);
         ArgumentNullException.ThrowIfNull(translationPath);
         ArgumentNullException.ThrowIfNull(outputPath);
+
+        if (concurrency is int width)
+        {
+            Ai.Translator.Core.Options.TranslatorOptions.EnsureConcurrencyInRange(width);
+        }
 
         RejectIfUnsupported(originalPath, "Original");
         RejectIfUnsupported(translationPath, "Translation");
@@ -93,6 +99,7 @@ public sealed class GlossaryExtractService : IGlossaryExtractService
             OutputPath = outputPath,
             WorkDir = ResolveWorkDir(outputPath, workDir),
             Resume = resume,
+            Concurrency = concurrency,
             OriginalPath = originalPath,
             TranslationPath = translationPath,
             PairsHash = pairsHash,

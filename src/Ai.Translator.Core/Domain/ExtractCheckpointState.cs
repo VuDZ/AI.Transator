@@ -19,4 +19,6 @@ public sealed class ExtractCheckpointState
     public int ReservedOutputTokens { get; set; }
 
     public List<string> CompletedSteps { get; set; } = [];
+
+    public Dictionary<string, string> PendingOutputs { get; set; } = new(StringComparer.Ordinal);
 }

@@ -33,7 +33,7 @@
 
 `TimeoutSeconds` — лимит всего запроса, включая чтение SSE (дефолт 300). Для больших глав можно задать 3600. 504 и обрыв потока — ретраимые.
 
-`Translator:MaxConcurrency` (эпоха 13): сколько чанков `translate` держит в модели одновременно после прогрева первым чанком. Дефолт **2**, диапазон 1–8, в `appsettings.json` / Local. Флаг `--concurrency` перекрывает на запуск. Extract не использует. На Provod каждый in-flight резервирует оценку стоимости отдельно; при узком балансе ставьте 1, иначе `402`.
+`Translator:MaxConcurrency` (эпоха 13): сколько чанков `translate` держит в модели одновременно после прогрева первым чанком. Дефолт **2**, диапазон 1–8, в `appsettings.json` / Local. Флаг `--concurrency` перекрывает на запуск. Extract использует отдельный `Translator:ExtractMaxConcurrency`. На Provod каждый in-flight резервирует оценку стоимости отдельно; при узком балансе ставьте 1, иначе `402`.
 
 Ключ в example — пустая строка. В настоящем Local — боевой ключ. Не логировать `ApiKey` и заголовок Authorization.
 
@@ -77,3 +77,11 @@ Local лежит рядом с csproj и копируется в output (`Preser
 [reasoning и общий output budget](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens),
 [SSE](https://openrouter.ai/docs/api/reference/streaming),
 [кеш, TTL и sticky sessions](https://openrouter.ai/docs/guides/best-practices/prompt-caching).
+
+## Параллельное извлечение словаря (эпоха 16)
+
+Translator:ExtractMaxConcurrency — отдельная настройка extract, по умолчанию 1, диапазон 1–8. Флаг glossary extract --concurrency N перекрывает её на запуск; translate продолжает использовать Translator:MaxConcurrency.
+
+Для четырёх одновременных запросов добавьте --concurrency 4 к существующей команде extract. Первый оставшийся запрос выполняется один для прогрева стабильного префикса. Затем пул отправляет до N запросов; слияние в Markdown и запись --out/state выполняются одним писателем в исходном порядке.
+
+Если поздний ответ уже готов, а предыдущий ещё выполняется, он хранится в state.json / PendingOutputs. При ошибке новые запросы не запускаются, уже запущенные дожидаются; сохранённые ответы используются при --resume без новой оплаты. N можно менять на resume. Не удаляйте work-dir, пока прогон не завершён.

@@ -95,7 +95,7 @@ flowchart TD
 ai-translator glossary compile --corpus <md> --book <epub> --out <md>
 ai-translator glossary extract --original <epub> --translation <epub> --out <md>
             [--merge-into <corpus.md>] [--model <id>] [--pairs <file>] [--max-pairs N]
-            [--work-dir <path>] [--resume]
+            [--work-dir <path>] [--resume] [--concurrency <1-8>]
 ai-translator glossary extract --original <epub> --translation <epub> --list-pairs
 ai-translator translate --input <epub> --glossary <md> --out <epub>
             [--model <id>] [--work-dir <path>] [--resume]
@@ -112,11 +112,13 @@ ai-translator translate --input <epub> --glossary <md> --out <epub>
 
 `--pairs` (эпоха 07): пары из [extract-pairs.md](extract-pairs.md). Без флага — индекс к индексу. С флагом — только mapping; главы вне файла в модель не идут. `--max-pairs N` — первые N пар после разворота файла (проверка без 40 глав). Не сочетать с `--list-pairs`. Не `--chapters` на extract.
 
-Extract `--work-dir` / `--resume` (эпоха 10): после каждого успешного фрагмента `--out` уже на диске. 429/5xx ретраятся до `MaxRetries`; после исчерпания — ошибка, пару не пропускать. `--resume` продолжает Done-шаги из `{stem}.extract.work` (дефолт рядом с `--out`). Не сочетать с `--list-pairs`. HTTP-ошибка шлюза: в тексте исключения — статус и обрезанное тело ответа.
+Extract `--work-dir` / `--resume` (эпоха 10): после каждого упорядоченного слияния `--out` уже на диске. В параллельном режиме эпохи 16 готовый ответ сначала сохраняется в `PendingOutputs` state, если более ранний шаг ещё не завершён. 429/5xx ретраятся до `MaxRetries`; после исчерпания — ошибка, пару не пропускать. `--resume` продолжает Done-шаги из `{stem}.extract.work` (дефолт рядом с `--out`). Не сочетать с `--list-pairs`. HTTP-ошибка шлюза: в тексте исключения — статус и обрезанное тело ответа.
 
 Прогресс LLM (эпоха 09, живой блок — 11): бар и usage на **stderr**, одна область, не лента таблиц на шаг. `Spectre.Console` только в Cli. Core шлёт шаги в `IRunProgress`. Категории `HttpClient` / `HttpClient.llm` — Warning, не Information. Служебные логгеры именованного клиента `llm` отключены в DI через `RemoveAllLoggers`, поэтому Start/Sending не зависят от настроек Logging; предупреждения и ошибки переводчика сохраняются.
 
-Параллельный translate (эпоха 13): `Translator:MaxConcurrency` дефолт 2 (1–8), `--concurrency` на `translate`. Первый оставшийся чанк один (прогрев кеша префикса), затем до N одновременных `CompleteAsync`. Extract не параллелить. Вызовы `IRunProgress` сериализовать в Core. `state.json` / `candidates.md` — один писатель. ETA — среднее шага × ceil(осталось / ширина пула). У Provod лимит — резерв баланса на каждый in-flight, не RPM; `402` не ретраить.
+Параллельный translate (эпоха 13): `Translator:MaxConcurrency` дефолт 2 (1–8), `--concurrency` на `translate`. Первый оставшийся чанк один (прогрев кеша префикса), затем до N одновременных `CompleteAsync`. Параллельный extract — отдельный контракт эпохи 16. Вызовы `IRunProgress` сериализовать в Core. `state.json` / `candidates.md` — один писатель. ETA — среднее шага × ceil(осталось / ширина пула). У Provod лимит — резерв баланса на каждый in-flight, не RPM; `402` не ретраить.
+
+Параллельный extract (эпоха 16): `Translator:ExtractMaxConcurrency` default 1 (1–8), CLI `--concurrency`. Префикс уже стабилен из исходного корпуса и не растёт. Первый оставшийся запрос — прогрев; далее до N. Ответы сохраняются сразу в `PendingOutputs` чекпоинта, слияние и `--out` — строго в исходном порядке, один писатель. Resume использует готовые ответы без LLM; N можно менять. После ошибки новые запросы не запускаются, текущие дожидаются и сохраняются.
 
 ## DI и конфигурация
 

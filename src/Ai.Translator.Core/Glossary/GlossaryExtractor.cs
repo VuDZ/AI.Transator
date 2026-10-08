@@ -96,6 +96,9 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
         ArgumentNullException.ThrowIfNull(translator);
         ArgumentNullException.ThrowIfNull(llm);
 
+        var maxConcurrency = run?.Concurrency ?? translator.ExtractMaxConcurrency;
+        TranslatorOptions.EnsureConcurrencyInRange(maxConcurrency);
+
         if (llm.ContextWindowTokens <= 0)
         {
             throw new InvalidOperationException(
@@ -185,64 +188,140 @@ public sealed class GlossaryExtractor : IGlossaryExtractor
             }
         }
 
-        var reporter = new RunProgressReporter(_progress, _timeProvider);
-        reporter.Begin(remaining.Count);
-
-        if (remaining.Count == 0 && run is not null)
+        if (state is not null)
         {
-            await FlushAsync(result, run, state ?? CreateState(run, resolvedModel, llm.ContextWindowTokens, llm.ReservedOutputTokens), cancellationToken)
-                .ConfigureAwait(false);
+            state.PendingOutputs ??= new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+
+        var ready = state?.PendingOutputs ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        var nextToMerge = 0;
+
+        async Task DrainReadyAsync()
+        {
+            while (nextToMerge < remaining.Count
+                && ready.TryGetValue(remaining[nextToMerge].Label, out var content))
+            {
+                var step = remaining[nextToMerge];
+                var merged = MergeModelOutput(result, content, step.PairIndex);
+                ready.Remove(step.Label);
+                if (run is not null)
+                {
+                    state!.CompletedSteps.Add(step.Label);
+                    try
+                    {
+                        await FlushAsync(merged, run, state, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        state.CompletedSteps.Remove(step.Label);
+                        ready[step.Label] = content;
+                        throw;
+                    }
+                }
+
+                result = merged;
+                completed.Add(step.Label);
+                nextToMerge++;
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await DrainReadyAsync().ConfigureAwait(false);
+        var toGenerate = remaining
+            .Where(step => !completed.Contains(step.Label) && !ready.ContainsKey(step.Label))
+            .ToList();
+        var reporter = new RunProgressReporter(_progress, _timeProvider, maxConcurrency);
+        reporter.Begin(toGenerate.Count, toGenerate.Select(step => step.Label).ToList());
+        if (toGenerate.Count == 0)
+        {
+            if (run is not null)
+            {
+                await FlushAsync(result, run, state!, cancellationToken).ConfigureAwait(false);
+            }
+
             reporter.Complete();
             return result;
         }
 
-        foreach (var step in remaining)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            reporter.StepBegin(step.Label);
-            var variable = WrapPair(
-                step.OriginalFragment,
-                step.TranslationFragment,
-                step.Original.FilePath ?? string.Empty,
-                step.Translation.FilePath ?? string.Empty,
-                step.PairIndex,
-                originalCount,
-                translationCount);
+        using var persistGate = new SemaphoreSlim(1, 1);
+        Exception? terminalError = null;
 
-            LlmResponse response;
+        async Task RunOneAsync(int index)
+        {
+            var step = toGenerate[index];
+            reporter.StepBegin(step.Label);
             try
             {
-                response = await CompleteWithRetriesAsync(
-                        new LlmRequest
-                        {
-                            Model = resolvedModel,
-                            StablePrefix = prefix,
-                            VariableContent = variable,
-                            MaxOutputTokens = llm.ReservedOutputTokens,
-                            Temperature = translator.Temperature
-                        },
-                        step.Label,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (LlmException)
-            {
-                reporter.StepEnd(failed: true);
-                throw;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                var variable = WrapPair(
+                    step.OriginalFragment, step.TranslationFragment,
+                    step.Original.FilePath ?? string.Empty, step.Translation.FilePath ?? string.Empty,
+                    step.PairIndex, originalCount, translationCount);
+                var response = await CompleteWithRetriesAsync(
+                    new LlmRequest
+                    {
+                        Model = resolvedModel,
+                        StablePrefix = prefix,
+                        VariableContent = variable,
+                        MaxOutputTokens = llm.ReservedOutputTokens,
+                        Temperature = translator.Temperature
+                    }, step.Label, cancellationToken).ConfigureAwait(false);
+                reporter.RecordResponse(step.Label, response);
 
-            reporter.RecordResponse(response);
-            reporter.StepEnd(failed: false);
-            result = MergeModelOutput(result, response.Content, step.PairIndex);
-            if (run is not null)
+                await persistGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    ready[step.Label] = response.Content ?? string.Empty;
+                    if (run is not null)
+                    {
+                        await _checkpoints.SaveAsync(run.WorkDir, state!, CancellationToken.None).ConfigureAwait(false);
+                    }
+
+                    await DrainReadyAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    persistGate.Release();
+                }
+
+                reporter.StepEnd(step.Label, failed: false);
+            }
+            catch (Exception ex)
             {
-                state ??= CreateState(run, resolvedModel, llm.ContextWindowTokens, llm.ReservedOutputTokens);
-                state.CompletedSteps.Add(step.Label);
-                await FlushAsync(result, run, state, cancellationToken).ConfigureAwait(false);
+                Interlocked.CompareExchange(ref terminalError, ex, null);
+                reporter.StepEnd(step.Label, failed: true);
             }
         }
 
+        await RunOneAsync(0).ConfigureAwait(false);
+        var next = 1;
+        var active = new List<Task>(maxConcurrency);
+        while (active.Count > 0
+            || Volatile.Read(ref terminalError) is null && !cancellationToken.IsCancellationRequested && next < toGenerate.Count)
+        {
+            while (active.Count < maxConcurrency && next < toGenerate.Count
+                && Volatile.Read(ref terminalError) is null && !cancellationToken.IsCancellationRequested)
+            {
+                active.Add(RunOneAsync(next++));
+            }
+
+            if (active.Count == 0)
+            {
+                break;
+            }
+
+            var finished = await Task.WhenAny(active).ConfigureAwait(false);
+            active.Remove(finished);
+            await finished.ConfigureAwait(false);
+        }
+
         reporter.Complete();
+        if (terminalError is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(terminalError).Throw();
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
         return result;
     }
     private IReadOnlyList<(EpubChapter Original, EpubChapter Translation)> ResolvePairs(

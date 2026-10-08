@@ -8,6 +8,8 @@ public sealed class ExtractRunContext
 
     public bool Resume { get; init; }
 
+    public int? Concurrency { get; init; }
+
     public required string OriginalPath { get; init; }
 
     public required string TranslationPath { get; init; }

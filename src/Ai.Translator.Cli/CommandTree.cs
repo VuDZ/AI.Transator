@@ -4,6 +4,7 @@ using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 using Ai.Translator.Core.Glossary;
 using Ai.Translator.Core.Llm;
+using Ai.Translator.Core.Options;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Ai.Translator.Cli;
@@ -133,6 +134,11 @@ internal static class CommandTree
             Description = "Resume unfinished extract steps from the working directory."
         };
 
+        var concurrencyOption = new Option<int?>("--concurrency")
+        {
+            Description = "Max in-flight extract steps after prefix cache warmup (1-8). Defaults to Translator:ExtractMaxConcurrency."
+        };
+
         var extract = new Command("extract", "Extract glossary candidates from an original and its translation.")
         {
             originalOption,
@@ -144,7 +150,8 @@ internal static class CommandTree
             pairsOption,
             maxPairsOption,
             workDirOption,
-            resumeOption
+            resumeOption,
+            concurrencyOption
         };
 
         extract.SetAction(async (parseResult, cancellationToken) =>
@@ -159,6 +166,7 @@ internal static class CommandTree
             var maxPairs = parseResult.GetValue(maxPairsOption);
             var workDir = parseResult.GetValue(workDirOption);
             var resume = parseResult.GetValue(resumeOption);
+            var concurrency = parseResult.GetValue(concurrencyOption);
             if (GlossaryExtractArguments.HasListPairsPairsConflict(listPairs, pairs))
             {
                 parseResult.InvocationConfiguration.Error.WriteLine(
@@ -166,7 +174,7 @@ internal static class CommandTree
                 return 1;
             }
 
-            if (GlossaryExtractArguments.HasListPairsConflict(listPairs, output, mergeInto, model, workDir, resume))
+            if (GlossaryExtractArguments.HasListPairsConflict(listPairs, output, mergeInto, model, workDir, resume, concurrency))
             {
                 parseResult.InvocationConfiguration.Error.WriteLine(
                     GlossaryExtractArguments.ListPairsConflictMessage);
@@ -184,6 +192,12 @@ internal static class CommandTree
             {
                 parseResult.InvocationConfiguration.Error.WriteLine(
                     GlossaryExtractArguments.MaxPairsMustBePositiveMessage);
+                return 1;
+            }
+
+            if (concurrency is int width && (width < TranslatorOptions.MinConcurrency || width > TranslatorOptions.MaxAllowedConcurrency))
+            {
+                parseResult.InvocationConfiguration.Error.WriteLine("Concurrency must be between 1 and 8.");
                 return 1;
             }
 
@@ -240,7 +254,8 @@ internal static class CommandTree
                     maxPairs,
                     cancellationToken,
                     workDir,
-                    resume);
+                    resume,
+                    concurrency);
                 return 0;
             }
             catch (Exception ex) when (ex is FileNotFoundException or GlossaryFormatException or InvalidOperationException or LlmException)

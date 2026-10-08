@@ -18,6 +18,8 @@ public sealed class TranslatorOptions
 
     public int MaxConcurrency { get; set; } = 2;
 
+    public int ExtractMaxConcurrency { get; set; } = 1;
+
     public static void EnsureConcurrencyInRange(int concurrency)
     {
         if (concurrency < MinConcurrency || concurrency > MaxAllowedConcurrency)
