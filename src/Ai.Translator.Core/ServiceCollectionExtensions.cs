@@ -45,7 +45,7 @@ public static class ServiceCollectionExtensions
                 client.DefaultRequestHeaders.Authorization =
                     new AuthenticationHeaderValue("Bearer", llm.ApiKey);
             }
-        });
+        }).RemoveAllLoggers();
 
         services.AddSingleton<IGlossaryParser, GlossaryParser>();
         services.AddSingleton<IGlossaryWriter, GlossaryWriter>();

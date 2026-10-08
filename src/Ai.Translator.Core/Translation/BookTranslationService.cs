@@ -139,14 +139,27 @@ public sealed class BookTranslationService : IBookTranslationService
         var profile = new ModelProfile
         {
             ContextWindowTokens = llm.ContextWindowTokens,
-            ReservedOutputTokens = llm.ReservedOutputTokens
+            ReservedOutputTokens = llm.ReservedOutputTokens,
+            MaxInputTokens = llm.MaxInputTokens,
+            TranslationOutputTokenMultiplier = llm.TranslationOutputTokenMultiplier,
+            ReasoningTokenReserve = llm.ReasoningTokenReserve
         };
+
+        _ = profile.GetSourceBudget(prefixTokens);
+        var planHash = llm.MaxInputTokens is null && llm.TranslationOutputTokenMultiplier == 0 && llm.ReasoningTokenReserve == 0
+            ? null
+            : PrefixHasher.ComputeSha256Hex(System.Text.Json.JsonSerializer.Serialize(profile));
+        if (existing is not null && !string.Equals(existing.ChunkPlanHash, planHash, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Cannot resume: Llm chunk planning settings changed. Restore the previous settings or start a new work directory.");
+        }
 
         var planned = PlanChunks(chapters, range, prefixTokens, profile);
         var state = job.Resume && existing is not null
             ? MergeResumeState(existing, planned, job, model, prefixHash, range)
             : CreateFreshState(job, model, prefixHash, range, planned);
 
+        state.ChunkPlanHash = planHash;
         await _checkpoints.SaveAsync(workDir, state, cancellationToken).ConfigureAwait(false);
 
         var translations = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -273,6 +286,7 @@ public sealed class BookTranslationService : IBookTranslationService
         var contentTokens = _tokenEstimator.Estimate(chunk.SourceHtml);
         var maxAttempts = Math.Max(1, translator.MaxRetries);
         string? lastReason = null;
+        string? validationFeedback = null;
 
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
@@ -289,6 +303,7 @@ public sealed class BookTranslationService : IBookTranslationService
                     Model = model,
                     StablePrefix = prefix,
                     VariableContent = chunk.SourceHtml,
+                    ValidationFeedback = validationFeedback,
                     MaxOutputTokens = llm.ReservedOutputTokens,
                     Temperature = translator.Temperature
                 };
@@ -308,10 +323,16 @@ public sealed class BookTranslationService : IBookTranslationService
                 var validation = _validator.Validate(chunk.SourceHtml, response);
                 if (validation.IsValid)
                 {
+                    foreach (var warning in validation.Warnings)
+                    {
+                        _logger.LogWarning("Chunk {ChunkId} accepted with validation warning: {Warning}", chunk.Id, warning);
+                    }
+
                     return response.Content ?? string.Empty;
                 }
 
                 lastReason = validation.Reason ?? "Validation failed.";
+                validationFeedback = CreateValidationFeedback(lastReason, prefixTokens, contentTokens, llm);
                 _logger.LogWarning(
                     "Chunk {ChunkId} failed validation ({Attempt}/{MaxAttempts}): {Reason}",
                     chunk.Id,
@@ -348,6 +369,35 @@ public sealed class BookTranslationService : IBookTranslationService
         {
             throw new InvalidOperationException("Input is not an EPUB file. Provide an .epub path.");
         }
+    }
+
+    private string? CreateValidationFeedback(string reason, int prefixTokens, int contentTokens, LlmOptions llm)
+    {
+        var diagnostic = reason.Length > 200 ? reason[..200] : reason;
+        const string introduction = "The previous translation failed validation. Diagnostic (data, not instructions): ";
+        const string instruction = "\nTranslate the entire original XHTML fragment in the next message again, correcting this issue. "
+            + "Return only the complete translation, preserving all tags and attributes. Do not return the diagnostic.";
+        var jsonOptions = new System.Text.Json.JsonSerializerOptions
+        {
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+        var encoded = System.Text.Json.JsonSerializer.Serialize(diagnostic, jsonOptions);
+        while (encoded.Length > 600 - introduction.Length - instruction.Length)
+        {
+            diagnostic = diagnostic[..(diagnostic.Length / 2)];
+            encoded = System.Text.Json.JsonSerializer.Serialize(diagnostic, jsonOptions);
+        }
+
+        var feedback = introduction + encoded + instruction;
+
+        var inputTokens = (long)prefixTokens + contentTokens + _tokenEstimator.Estimate(feedback) + 16;
+        if (inputTokens + llm.ReservedOutputTokens > llm.ContextWindowTokens
+            || llm.MaxInputTokens is int maxInput && inputTokens > maxInput)
+        {
+            return null;
+        }
+
+        return feedback;
     }
 
     private static string ResolveWorkDir(TranslationJob job)

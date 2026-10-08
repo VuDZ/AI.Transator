@@ -40,7 +40,8 @@ public sealed class ChatCompletionsLlmProviderTests
         var root = json.RootElement;
         Assert.Equal("test-model", root.GetProperty("model").GetString());
         Assert.False(root.GetProperty("stream").GetBoolean());
-        Assert.Equal(500, root.GetProperty("max_tokens").GetInt32());
+        Assert.Equal(500, root.GetProperty("max_completion_tokens").GetInt32());
+        Assert.False(root.TryGetProperty("max_tokens", out _));
         Assert.False(root.TryGetProperty("temperature", out _));
 
         var messages = root.GetProperty("messages");
@@ -304,6 +305,35 @@ public sealed class ChatCompletionsLlmProviderTests
         MaxOutputTokens = 500,
         Temperature = 0.2
     };
+
+    [Fact]
+    public async Task CompleteAsync_ValidationFeedback_PrecedesSourceAndKeepsCachePrefix()
+    {
+        string? body = null;
+        var handler = new RecordingHandler(async (request, token) =>
+        {
+            body = await request.Content!.ReadAsStringAsync(token);
+            return CompletionResponse("<p>Перевод</p>");
+        });
+        var request = new LlmRequest
+        {
+            Model = "test-model",
+            StablePrefix = "stable prefix",
+            VariableContent = "<p>Original source</p>",
+            ValidationFeedback = "Previous attempt contained The blade moved. Translate the source again.",
+            MaxOutputTokens = 500
+        };
+        await CreateProvider(handler, OpenRouterOptions()).CompleteAsync(request, CancellationToken.None);
+        using var json = JsonDocument.Parse(body!);
+        var messages = json.RootElement.GetProperty("messages");
+        Assert.Equal(3, messages.GetArrayLength());
+        Assert.Equal("stable prefix", messages[0].GetProperty("content")[0].GetProperty("text").GetString());
+        Assert.True(messages[0].GetProperty("content")[0].TryGetProperty("cache_control", out _));
+        Assert.Equal("user", messages[1].GetProperty("role").GetString());
+        Assert.Equal(request.ValidationFeedback, messages[1].GetProperty("content").GetString());
+        Assert.Equal("user", messages[2].GetProperty("role").GetString());
+        Assert.Equal(request.VariableContent, messages[2].GetProperty("content").GetString());
+    }
 
     private static HttpResponseMessage CompletionResponse(string content, int? cachedTokens = null)
     {

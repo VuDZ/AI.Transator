@@ -6,7 +6,10 @@ public sealed class ValidationResult
 
     public string? Reason { get; init; }
 
-    public static ValidationResult Ok() => new() { IsValid = true };
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    public static ValidationResult Ok(IReadOnlyList<string>? warnings = null) =>
+        new() { IsValid = true, Warnings = warnings ?? [] };
 
     public static ValidationResult Fail(string reason)
     {

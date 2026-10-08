@@ -11,4 +11,6 @@ public sealed class LlmResponse
     public int? CachedTokens { get; init; }
 
     public int? CompletionTokens { get; init; }
+
+    public int? ReasoningTokens { get; init; }
 }

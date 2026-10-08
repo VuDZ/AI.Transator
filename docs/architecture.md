@@ -114,7 +114,7 @@ ai-translator translate --input <epub> --glossary <md> --out <epub>
 
 Extract `--work-dir` / `--resume` (эпоха 10): после каждого успешного фрагмента `--out` уже на диске. 429/5xx ретраятся до `MaxRetries`; после исчерпания — ошибка, пару не пропускать. `--resume` продолжает Done-шаги из `{stem}.extract.work` (дефолт рядом с `--out`). Не сочетать с `--list-pairs`. HTTP-ошибка шлюза: в тексте исключения — статус и обрезанное тело ответа.
 
-Прогресс LLM (эпоха 09, живой блок — 11): бар и usage на **stderr**, одна область, не лента таблиц на шаг. `Spectre.Console` только в Cli. Core шлёт шаги в `IRunProgress`. Категории `HttpClient` / `HttpClient.llm` — Warning, не Information.
+Прогресс LLM (эпоха 09, живой блок — 11): бар и usage на **stderr**, одна область, не лента таблиц на шаг. `Spectre.Console` только в Cli. Core шлёт шаги в `IRunProgress`. Категории `HttpClient` / `HttpClient.llm` — Warning, не Information. Служебные логгеры именованного клиента `llm` отключены в DI через `RemoveAllLoggers`, поэтому Start/Sending не зависят от настроек Logging; предупреждения и ошибки переводчика сохраняются.
 
 Параллельный translate (эпоха 13): `Translator:MaxConcurrency` дефолт 2 (1–8), `--concurrency` на `translate`. Первый оставшийся чанк один (прогрев кеша префикса), затем до N одновременных `CompleteAsync`. Extract не параллелить. Вызовы `IRunProgress` сериализовать в Core. `state.json` / `candidates.md` — один писатель. ETA — среднее шага × ceil(осталось / ширина пула). У Provod лимит — резерв баланса на каждый in-flight, не RPM; `402` не ретраить.
 
@@ -129,8 +129,8 @@ Extract `--work-dir` / `--resume` (эпоха 10): после каждого у�
 
 ## Контракт LLM
 
-Единственный способ звать модель в v1: **нестриминговый Chat Completions**.
-`POST {BaseUrl}/chat/completions`, `stream: false`.
+Единственный способ звать модель: **Chat Completions**.
+`POST {BaseUrl}/chat/completions`, `stream` из `Llm:Stream` (по умолчанию false). Эпоха 14 добавляет SSE с возвратом целого ответа по прежнему контракту.
 System = `StablePrefix`, user = `VariableContent`.
 
 `StablePrefix` — три слоя в фиксированном порядке (кеш на всю книгу):
@@ -142,7 +142,7 @@ System = `StablePrefix`, user = `VariableContent`.
 Слой 3 не резать под главу. WH40k и прочие вселенные — только в преамбуле корпуса, не в коде.
 Ответ целиком: `choices[0].message.content` + `finish_reason` + usage.
 
-Не делаем: Responses API, Anthropic Messages, legacy Completions, streaming, batch.
+Не делаем: Responses API, Anthropic Messages, legacy Completions, batch. Streaming, reasoning, TTL кеша и отдельный предел входа — [эпоха 14](epochs/14-openrouter-large-requests.md).
 
 ```
 ILlmProvider
@@ -165,7 +165,7 @@ LlmResponse
 
 Кеш — `Llm:CacheMode` из Local (`none` | `openrouter`), не ветка пайплайна.
 `temperature` в JSON — только если `Llm:SendTemperature` (эпоха 08). Иначе поле не слать: Provod/GPT-5 на `0.3` отвечает 503.
-Нарезка: `ContextWindowTokens` минус префикс и резерв ответа. Оценка токенов: length/4.
+Нарезка: `ContextWindowTokens` минус префикс и резерв ответа; дополнительно `MaxInputTokens` и оценка расширения перевода по контракту эпохи 14. Оценка токенов: length/4.
 
 ## EPUB
 
@@ -193,7 +193,7 @@ xUnit + Moq. Проверяем не только return value, но и побо
 - round-trip Markdown словаря
 - компилятор отбирает только встречаемые термины + алиасы/дефисы
 - чанкер уважает бюджет токенов
-- валидатор ловит пусто, обрыв, английские связки, дырки в абзацах. Служебное слово — целый токен (`a_start` не `a`). Строки машинного протокола (двоичные прогоны, каша цифр/`=`/`%`) на стоп-лист не проверять (эпоха 12). В Reason — сработавшее слово.
+- валидатор ловит пусто, обрыв, английские связки, дырки в абзацах. Служебное слово — целый токен (`a_start` не `a`). Строки машинного протокола (двоичные прогоны, каша цифр/`=`/`%`) на стоп-лист не проверять (эпоха 12). В Reason — сработавшее слово и короткий контекст. Эпоха 15: одиночное совпадение — warning, связная английская фраза — fail; при повторе feedback отправляется отдельно от StablePrefix, если помещается в бюджет.
 - сборка запроса OpenRouter содержит `cache_control`, OpenAI — нет
 - EPUB: минимальная валидная книга переживает replace XHTML
 

@@ -10,8 +10,10 @@ namespace Ai.Translator.Tests;
 
 public sealed class HttpClientLoggingTests
 {
-    [Fact]
-    public async Task LlmHttpClient_DefaultInformation_DoesNotLogStartOrSending()
+    [Theory]
+    [InlineData(LogLevel.Information)]
+    [InlineData(LogLevel.Trace)]
+    public async Task LlmHttpClient_VerboseLogging_DoesNotLogRequests(LogLevel minimumLevel)
     {
         var collector = new CollectingLoggerProvider();
         const string json =
@@ -37,24 +39,37 @@ public sealed class HttpClientLoggingTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
         var configuration = new ConfigurationBuilder()
             .AddJsonStream(stream)
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Logging:LogLevel:Default"] = minimumLevel.ToString(),
+                ["Logging:LogLevel:System.Net.Http"] = minimumLevel.ToString(),
+                ["Logging:LogLevel:System.Net.Http.HttpClient"] = minimumLevel.ToString(),
+                ["Logging:LogLevel:System.Net.Http.HttpClient.llm"] = minimumLevel.ToString(),
+                ["Logging:LogLevel:System.Net.Http.HttpClient.llm.LogicalHandler"] = minimumLevel.ToString(),
+                ["Logging:LogLevel:System.Net.Http.HttpClient.llm.ClientHandler"] = minimumLevel.ToString()
+            })
             .Build();
 
         var services = new ServiceCollection();
         services.AddLogging(builder =>
         {
-            builder.SetMinimumLevel(LogLevel.Information);
-            builder.AddFilter("System.Net.Http", LogLevel.Warning);
-            builder.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
-            builder.AddFilter("System.Net.Http.HttpClient.llm", LogLevel.Warning);
+            builder.SetMinimumLevel(minimumLevel);
+            builder.AddConfiguration(configuration.GetSection("Logging"));
             builder.AddProvider(collector);
         });
         services.AddTranslator(configuration);
         services.AddHttpClient(ServiceCollectionExtensions.LlmHttpClientName)
             .ConfigurePrimaryHttpMessageHandler(() => new StubHandler());
 
+        services.AddHttpClient("other")
+            .ConfigurePrimaryHttpMessageHandler(() => new StubHandler());
+
         await using var provider = services.BuildServiceProvider();
         var factory = provider.GetRequiredService<ILoggerFactory>();
-        factory.CreateLogger("Ai.Translator.Tests.Probe").LogInformation("probe-visible");
+        var applicationLogger = factory.CreateLogger("Ai.Translator.Tests.Probe");
+        applicationLogger.LogInformation("probe-visible");
+        applicationLogger.LogWarning("retry-visible");
+        applicationLogger.LogError("failure-visible");
 
         using var client = provider.GetRequiredService<IHttpClientFactory>()
             .CreateClient(ServiceCollectionExtensions.LlmHttpClientName);
@@ -64,10 +79,15 @@ public sealed class HttpClientLoggingTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains(collector.Entries, e => e.Contains("probe-visible", StringComparison.Ordinal));
-        Assert.DoesNotContain(
-            collector.Entries,
-            e => e.Contains("Start processing", StringComparison.OrdinalIgnoreCase)
-                 || e.Contains("Sending HTTP request", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(collector.Entries, e => e.Contains("retry-visible", StringComparison.Ordinal));
+        Assert.Contains(collector.Entries, e => e.Contains("failure-visible", StringComparison.Ordinal));
+        Assert.DoesNotContain(collector.Entries, e => e.StartsWith("System.Net.Http.HttpClient.llm.", StringComparison.Ordinal));
+
+        using var otherClient = provider.GetRequiredService<IHttpClientFactory>().CreateClient("other");
+        using var otherResponse = await otherClient.GetAsync("https://gateway.test/health");
+        Assert.Equal(HttpStatusCode.OK, otherResponse.StatusCode);
+        Assert.Contains(collector.Entries, e => e.StartsWith("System.Net.Http.HttpClient.other.", StringComparison.Ordinal)
+            && e.Contains("Sending HTTP request", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -141,7 +161,7 @@ public sealed class HttpClientLoggingTests
 
         public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
 
-        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Information;
+        public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
 
         public void Log<TState>(
             LogLevel logLevel,

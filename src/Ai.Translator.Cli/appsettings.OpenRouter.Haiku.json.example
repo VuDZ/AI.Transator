@@ -1,0 +1,18 @@
+{
+  "Llm": {
+    "BaseUrl": "https://openrouter.ai/api/v1",
+    "Model": "anthropic/claude-haiku-5.5",
+    "ApiKey": "",
+    "ContextWindowTokens": 1000000,
+    "MaxInputTokens": 90000,
+    "ReservedOutputTokens": 128000,
+    "TranslationOutputTokenMultiplier": 2,
+    "ReasoningTokenReserve": 0,
+    "Stream": true,
+    "ReasoningEffort": "none",
+    "CacheMode": "openrouter",
+    "CacheTtl": "1h",
+    "TimeoutSeconds": 3600,
+    "SendTemperature": false
+  }
+}

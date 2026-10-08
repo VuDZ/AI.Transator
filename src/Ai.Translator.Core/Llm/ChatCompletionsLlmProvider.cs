@@ -42,32 +42,53 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
     public async Task<LlmResponse> CompleteAsync(LlmRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-
         var llm = _options.Value;
         ArgumentNullException.ThrowIfNull(llm);
         EnsureConfigured(llm);
+        if (request.MaxOutputTokens <= 0)
+        {
+            throw new InvalidOperationException("The completion token limit must be positive.");
+        }
 
         var client = _httpClientFactory.CreateClient(ServiceCollectionExtensions.LlmHttpClientName);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(llm.TimeoutSeconds));
+        var token = timeout.Token;
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
         {
-            Content = new StringContent(
-                BuildRequestJson(request, llm.CacheMode, llm.SendTemperature),
-                Encoding.UTF8,
-                "application/json")
+            Content = new StringContent(BuildRequestJson(request, llm), Encoding.UTF8, "application/json")
         };
 
-        HttpResponseMessage httpResponse;
         try
         {
-            httpResponse = await client
-                .SendAsync(httpRequest, cancellationToken)
+            using var httpResponse = await client
+                .SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, token)
                 .ConfigureAwait(false);
+            var status = (int)httpResponse.StatusCode;
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                var body = await httpResponse.Content.ReadAsStringAsync(token).ConfigureAwait(false);
+                throw new LlmException(
+                    FormatGatewayError(status, body, status is 401 or 403),
+                    isRetryable: status == 429 || status >= 500,
+                    httpStatusCode: status);
+            }
+
+            var json = llm.Stream
+                ? await ChatCompletionStreamReader.ReadAsync(httpResponse.Content, token).ConfigureAwait(false)
+                : await httpResponse.Content.ReadAsStringAsync(token).ConfigureAwait(false);
+            var response = ParseResponse(json);
+            _logger.LogInformation(
+                "Chat Completions finished: model {Model}, finish {FinishReason}, prompt tokens {PromptTokens}, cached {CachedTokens}, completion {CompletionTokens}, reasoning {ReasoningTokens}.",
+                request.Model, response.FinishReason, response.PromptTokens, response.CachedTokens,
+                response.CompletionTokens, response.ReasoningTokens);
+            return response;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
-        catch (TaskCanceledException ex)
+        catch (OperationCanceledException ex)
         {
             throw new LlmException("The LLM request timed out.", isRetryable: true, innerException: ex);
         }
@@ -75,36 +96,9 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
         {
             throw new LlmException("The LLM gateway is unreachable.", isRetryable: true, innerException: ex);
         }
-
-        using (httpResponse)
+        catch (IOException ex)
         {
-            var body = await httpResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            var status = (int)httpResponse.StatusCode;
-            if (status == (int)HttpStatusCode.Unauthorized || status == (int)HttpStatusCode.Forbidden)
-            {
-                throw new LlmException(
-                    FormatGatewayError(status, body, credentialsRejected: true),
-                    isRetryable: false,
-                    httpStatusCode: status);
-            }
-
-            if (!httpResponse.IsSuccessStatusCode)
-            {
-                var retryable = status == 429 || status >= 500;
-                throw new LlmException(
-                    FormatGatewayError(status, body, credentialsRejected: false),
-                    isRetryable: retryable,
-                    httpStatusCode: status);
-            }
-
-            var response = ParseResponse(body);
-            _logger.LogInformation(
-                "Chat Completions finished: model {Model}, finish {FinishReason}, prompt tokens {PromptTokens}, cached {CachedTokens}.",
-                request.Model,
-                response.FinishReason,
-                response.PromptTokens,
-                response.CachedTokens);
-            return response;
+            throw new LlmException("The LLM response was interrupted.", isRetryable: true, innerException: ex);
         }
     }
 
@@ -126,12 +120,23 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
             throw new InvalidOperationException(
                 "Llm:CacheMode must be 'none' or 'openrouter' (set it in appsettings.Local.json).");
         }
+        if (llm.ReasoningEffort is not null && llm.ReasoningEffort is not
+            ("" or "none" or "minimal" or "low" or "medium" or "high" or "xhigh" or "max"))
+        {
+            throw new InvalidOperationException("Llm:ReasoningEffort must be none, minimal, low, medium, high, xhigh or max, or omitted.");
+        }
+
+        if (IsOpenRouterCacheMode(llm.CacheMode)
+            && llm.CacheTtl is not null && llm.CacheTtl is not ("" or "5m" or "1h"))
+        {
+            throw new InvalidOperationException("Llm:CacheTtl must be 5m, 1h, or omitted.");
+        }
     }
 
-    private static string BuildRequestJson(LlmRequest request, string? cacheMode, bool sendTemperature)
+    private static string BuildRequestJson(LlmRequest request, LlmOptions llm)
     {
         JsonNode systemContent;
-        if (IsOpenRouterCacheMode(cacheMode))
+        if (IsOpenRouterCacheMode(llm.CacheMode))
         {
             systemContent = new JsonArray
             {
@@ -139,7 +144,7 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
                 {
                     ["type"] = "text",
                     ["text"] = request.StablePrefix,
-                    ["cache_control"] = new JsonObject { ["type"] = "ephemeral" }
+                    ["cache_control"] = CreateCacheControl(llm.CacheTtl)
                 }
             };
         }
@@ -164,16 +169,55 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
                     ["content"] = request.VariableContent
                 }
             },
-            ["max_tokens"] = request.MaxOutputTokens,
-            ["stream"] = false
+            [IsOpenRouterCacheMode(llm.CacheMode) ? "max_completion_tokens" : "max_tokens"] = request.MaxOutputTokens,
+            ["stream"] = llm.Stream
         };
 
-        if (sendTemperature)
+        if (!string.IsNullOrWhiteSpace(request.ValidationFeedback))
+        {
+            var messages = (JsonArray)payload["messages"]!;
+            messages.Insert(1, new JsonObject
+            {
+                ["role"] = "user",
+                ["content"] = request.ValidationFeedback
+            });
+        }
+
+        if (llm.SendTemperature)
         {
             payload["temperature"] = request.Temperature;
         }
 
+        if (llm.Stream)
+        {
+            payload["stream_options"] = new JsonObject { ["include_usage"] = true };
+        }
+
+        if (!string.IsNullOrWhiteSpace(llm.ReasoningEffort))
+        {
+            payload["reasoning"] = llm.ReasoningEffort == "none"
+                ? new JsonObject { ["enabled"] = false }
+                : new JsonObject { ["effort"] = llm.ReasoningEffort, ["exclude"] = true };
+        }
+
+        if (IsOpenRouterCacheMode(llm.CacheMode))
+        {
+            payload["session_id"] = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(request.StablePrefix)));
+        }
+
         return payload.ToJsonString(RequestJsonOptions);
+    }
+
+    private static JsonObject CreateCacheControl(string? ttl)
+    {
+        var cache = new JsonObject { ["type"] = "ephemeral" };
+        if (!string.IsNullOrWhiteSpace(ttl))
+        {
+            cache["ttl"] = ttl;
+        }
+
+        return cache;
     }
 
     private static bool IsOpenRouterCacheMode(string? cacheMode) =>
@@ -198,6 +242,12 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
         using (document)
         {
             var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                throw new LlmException("LLM returned a response that is not an object.", isRetryable: false);
+            }
+
+            ChatCompletionStreamReader.ThrowIfError(root);
             if (!root.TryGetProperty("choices", out var choices)
                 || choices.ValueKind != JsonValueKind.Array
                 || choices.GetArrayLength() == 0)
@@ -223,6 +273,7 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
             var promptTokens = 0;
             int? cachedTokens = null;
             int? completionTokens = null;
+            int? reasoningTokens = null;
             if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
             {
                 if (usage.TryGetProperty("prompt_tokens", out var promptElement)
@@ -232,6 +283,13 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
                 }
 
                 cachedTokens = ReadCachedTokens(usage);
+                if (usage.TryGetProperty("completion_tokens_details", out var completionDetails)
+                    && completionDetails.ValueKind == JsonValueKind.Object
+                    && completionDetails.TryGetProperty("reasoning_tokens", out var reasoningElement)
+                    && reasoningElement.TryGetInt32(out var parsedReasoning))
+                {
+                    reasoningTokens = parsedReasoning;
+                }
 
                 if (usage.TryGetProperty("completion_tokens", out var completionElement)
                     && completionElement.TryGetInt32(out var parsedCompletion))
@@ -246,7 +304,8 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
                 FinishReason = finishReason,
                 PromptTokens = promptTokens,
                 CachedTokens = cachedTokens,
-                CompletionTokens = completionTokens
+                CompletionTokens = completionTokens,
+                ReasoningTokens = reasoningTokens
             };
         }
     }
@@ -292,6 +351,8 @@ public sealed class ChatCompletionsLlmProvider : ILlmProvider
             }
 
             if (part.ValueKind == JsonValueKind.Object
+                && (!part.TryGetProperty("type", out var type)
+                    || type.ValueKind == JsonValueKind.String && type.GetString() == "text")
                 && part.TryGetProperty("text", out var text)
                 && text.ValueKind == JsonValueKind.String)
             {

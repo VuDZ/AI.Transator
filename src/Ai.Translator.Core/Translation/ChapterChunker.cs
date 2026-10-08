@@ -26,7 +26,7 @@ public sealed class ChapterChunker : IChapterChunker
         ArgumentNullException.ThrowIfNull(chapter.FilePath);
         ArgumentNullException.ThrowIfNull(modelProfile);
 
-        var budget = modelProfile.ContextWindowTokens - prefixTokenCount - modelProfile.ReservedOutputTokens;
+        var budget = modelProfile.GetSourceBudget(prefixTokenCount);
         if (budget <= 0)
         {
             throw new InvalidOperationException(BudgetExceededMessage);
@@ -55,7 +55,10 @@ public sealed class ChapterChunker : IChapterChunker
 
         var packed = new List<List<string>>();
         var current = new List<string>();
+        var currentHtml = new StringBuilder();
         var currentTokens = 0;
+        var useSeparateBudgets = modelProfile.MaxInputTokens is not null
+            || modelProfile.TranslationOutputTokenMultiplier > 0 || modelProfile.ReasoningTokenReserve > 0;
         foreach (var fragment in fragments)
         {
             ArgumentNullException.ThrowIfNull(fragment);
@@ -65,16 +68,23 @@ public sealed class ChapterChunker : IChapterChunker
                 throw new InvalidOperationException(BudgetExceededMessage);
             }
 
-            if (current.Count > 0 && currentTokens + fragmentTokens > budget)
+            currentHtml.Append(fragment);
+            var combinedTokens = useSeparateBudgets
+                ? _estimator.Estimate(currentHtml.ToString())
+                : currentTokens + fragmentTokens;
+            if (current.Count > 0 && combinedTokens > budget)
             {
                 packed.Add(current);
                 current = [fragment];
+                currentHtml.Clear();
+                currentHtml.Append(fragment);
                 currentTokens = fragmentTokens;
                 continue;
             }
 
             current.Add(fragment);
-            currentTokens += fragmentTokens;
+            currentTokens = combinedTokens;
+
         }
 
         if (current.Count > 0)

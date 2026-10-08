@@ -8,6 +8,8 @@ public sealed class LlmRequest
 
     public required string VariableContent { get; init; }
 
+    public string? ValidationFeedback { get; init; }
+
     public int MaxOutputTokens { get; init; }
 
     public double Temperature { get; init; }

@@ -13,6 +13,7 @@
 ## В скоупе
 
 - В [appsettings.json](../../src/Ai.Translator.Cli/appsettings.json) явно `Warning` для `System.Net.Http`, `System.Net.Http.HttpClient`, `System.Net.Http.HttpClient.llm` — даже если Default поднимут до Information в Local.
+- У клиента `llm` отключены служебные логгеры `IHttpClientFactory` через `RemoveAllLoggers` ([правка](../fixes/09-http-logging.md)): HTTP-шум не зависит от переопределений Logging. Предупреждения и ошибки самого переводчика сохраняются.
 - Не логировать URL/старт POST на Information. Существующие `LogInformation` чанка/пары можно оставить или заменить прогрессом; HTTP-шум фреймворка — убрать.
 - `Spectre.Console` **только в Cli**. В Core — порт прогресса (например `IRunProgress`), без ссылки на Spectre.
 - Бар: done/total LLM-шагов (чанки translate с учётом уже Done при `--resume`; пары/осколки extract). Пока запрос висит — подпись текущего шага (`0007-0000`, путь пары extract).

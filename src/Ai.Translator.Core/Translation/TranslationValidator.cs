@@ -1,4 +1,6 @@
+using System.Text;
 using System.Text.RegularExpressions;
+using HtmlAgilityPack;
 using Ai.Translator.Core.Abstractions;
 using Ai.Translator.Core.Domain;
 
@@ -23,12 +25,8 @@ public sealed class TranslationValidator : ITranslationValidator
         @"<(p|h1|h2|h3|h4|h5|h6|blockquote|li)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    private static readonly Regex HtmlTagRegex = new(
-        @"<[^>]+>",
-        RegexOptions.CultureInvariant | RegexOptions.Compiled);
-
-    private static readonly Regex LatinTokenRegex = new(
-        @"[A-Za-z][A-Za-z0-9_]*",
+private static readonly Regex WordRegex = new(
+        @"[\p{L}\p{N}_]+",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex BinaryRunRegex = new(
@@ -61,13 +59,7 @@ public sealed class TranslationValidator : ITranslationValidator
             return ValidationResult.Fail("Translated HTML dropped too many block elements.");
         }
 
-        var leaked = FindEnglishFunctionWord(content);
-        if (leaked is not null)
-        {
-            return ValidationResult.Fail(EnglishFunctionWordReasonPrefix + leaked);
-        }
-
-        return ValidationResult.Ok();
+        return ValidateEnglish(content);
     }
 
     private static bool IsTruncated(string? finishReason)
@@ -132,9 +124,10 @@ public sealed class TranslationValidator : ITranslationValidator
         return translatedBlocks * 2 < sourceBlocks;
     }
 
-    private static string? FindEnglishFunctionWord(string content)
+    private static ValidationResult ValidateEnglish(string content)
     {
-        var plain = HtmlTagRegex.Replace(content, "\n");
+        var warnings = new List<string>();
+        var plain = VisibleText(content);
         foreach (var line in plain.Split('\n'))
         {
             if (IsProtocolLike(line))
@@ -142,16 +135,130 @@ public sealed class TranslationValidator : ITranslationValidator
                 continue;
             }
 
-            foreach (Match match in LatinTokenRegex.Matches(line))
+            var run = new List<Match>();
+            string? failure = null;
+
+            void CheckRun()
             {
-                if (EnglishFunctionWords.Contains(match.Value))
+                if (run.Count == 0)
                 {
-                    return match.Value;
+                    return;
                 }
+
+                var functionWords = run.Where(word => EnglishFunctionWords.Contains(word.Value)).ToList();
+                if (functionWords.Count > 0)
+                {
+                    var token = functionWords[0].Value;
+                    var contextStart = Math.Max(0, run[0].Index - 30);
+                    var snippet = line.Substring(contextStart, Math.Min(120, line.Length - contextStart));
+                    snippet = Regex.Replace(snippet, @"\s+", " ").Replace('"', '\'');
+                    var reason = EnglishFunctionWordReasonPrefix + token + "; context: \"" + snippet + "\"";
+                    if (run.Count >= 3 || functionWords.Count >= 2)
+                    {
+                        failure = reason;
+                    }
+                    else if (warnings.Count < 3)
+                    {
+                        warnings.Add(reason);
+                    }
+                }
+
+                run.Clear();
+            }
+
+            foreach (Match word in WordRegex.Matches(line))
+            {
+                if (run.Count > 0)
+                {
+                    var previous = run[^1];
+                    var gap = line.AsSpan(previous.Index + previous.Length, word.Index - previous.Index - previous.Length);
+                    if (!IsPhraseGap(gap))
+                    {
+                        CheckRun();
+                    }
+                }
+
+                if (failure is not null)
+                {
+                    return ValidationResult.Fail(failure);
+                }
+
+                if (word.Value.All(char.IsAsciiLetter))
+                {
+                    run.Add(word);
+                }
+                else
+                {
+                    CheckRun();
+                    if (failure is not null)
+                    {
+                        return ValidationResult.Fail(failure);
+                    }
+                }
+            }
+
+            CheckRun();
+            if (failure is not null)
+            {
+                return ValidationResult.Fail(failure);
             }
         }
 
-        return null;
+        return ValidationResult.Ok(warnings);
+    }
+
+    private static bool IsPhraseGap(ReadOnlySpan<char> gap)
+    {
+        foreach (var ch in gap)
+        {
+            if (!char.IsWhiteSpace(ch) && ch is not (',' or '\'' or '"' or '’' or '‘' or '«' or '»' or '-'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string VisibleText(string html)
+    {
+        var document = new HtmlDocument();
+        document.LoadHtml(html);
+        var text = new StringBuilder();
+
+        void Visit(HtmlNode node)
+        {
+            if (node.NodeType == HtmlNodeType.Comment || node.Name is "head" or "script" or "style")
+            {
+                return;
+            }
+
+            if (node.NodeType == HtmlNodeType.Text)
+            {
+                text.Append(HtmlEntity.DeEntitize(node.InnerText));
+                return;
+            }
+
+            var block = node.Name is "p" or "h1" or "h2" or "h3" or "h4" or "h5" or "h6"
+                or "blockquote" or "li" or "div" or "section" or "article" or "br" or "tr" or "td" or "th" or "pre";
+            if (block)
+            {
+                text.Append('\n');
+            }
+
+            foreach (var child in node.ChildNodes)
+            {
+                Visit(child);
+            }
+
+            if (block)
+            {
+                text.Append('\n');
+            }
+        }
+
+        Visit(document.DocumentNode);
+        return text.ToString();
     }
 
     private static bool IsProtocolLike(string line)

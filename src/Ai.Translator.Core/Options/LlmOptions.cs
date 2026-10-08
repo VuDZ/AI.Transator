@@ -19,4 +19,16 @@ public sealed class LlmOptions
     public string CacheMode { get; set; } = "none";
 
     public bool SendTemperature { get; set; }
+
+    public int? MaxInputTokens { get; set; }
+
+    public double TranslationOutputTokenMultiplier { get; set; }
+
+    public int ReasoningTokenReserve { get; set; }
+
+    public bool Stream { get; set; }
+
+    public string? ReasoningEffort { get; set; }
+
+    public string? CacheTtl { get; set; }
 }

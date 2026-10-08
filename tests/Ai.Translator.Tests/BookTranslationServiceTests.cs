@@ -985,12 +985,178 @@ public sealed class BookTranslationServiceTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RunAsync_Resume_RejectsChangedPlanningBeforeOverwritingChunks(bool useNewProfile)
+    {
+        var root = NewRoot();
+        try
+        {
+            var input = MinimalEpubFactory.Create(root, "<p>Original</p>");
+            var glossary = await WriteGlossaryAsync(root);
+            var output = Path.Combine(root, "out.epub");
+            var work = Path.Combine(root, "work");
+            var options = new LlmOptions
+            {
+                Model = "test-model",
+                ContextWindowTokens = 1000000,
+                ReservedOutputTokens = 128000,
+                MaxInputTokens = useNewProfile ? 90000 : null,
+                TranslationOutputTokenMultiplier = useNewProfile ? 2 : 0
+            };
+            var llm = CreateMappingLlm(request =>
+            {
+                Assert.Equal(128000, request.MaxOutputTokens);
+                return Ok("<p>Перевод</p>");
+            });
+            await CreateService(llm.Object, llmOptions: options).RunAsync(Job(input, glossary, output, work), CancellationToken.None);
+            var statePath = Path.Combine(work, "state.json");
+            var originalState = await File.ReadAllTextAsync(statePath);
+            options.MaxInputTokens = 80000;
+            var blocked = new Mock<ILlmProvider>(MockBehavior.Strict);
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                CreateService(blocked.Object, llmOptions: options).RunAsync(new TranslationJob
+                {
+                    InputPath = input, GlossaryPath = glossary, OutputPath = output, WorkDir = work, Resume = true
+                }, CancellationToken.None));
+            Assert.Contains("planning", error.Message);
+            Assert.Equal(originalState, await File.ReadAllTextAsync(statePath));
+            blocked.Verify(x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+            options.MaxInputTokens = useNewProfile ? 90000 : null;
+            var resumed = await CreateService(blocked.Object, llmOptions: options).RunAsync(new TranslationJob
+            {
+                InputPath = input, GlossaryPath = glossary, OutputPath = output, WorkDir = work, Resume = true
+            }, CancellationToken.None);
+            Assert.False(resumed.HasFailures);
+            blocked.Verify(x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task RunAsync_EnglishRetry_SuppliesFeedbackOnlyWhenItFits(int budgetMode)
+    {
+        var root = NewRoot();
+        try
+        {
+            const string source = "<p>The blade moved.</p>";
+            const string style = "Translate to Russian. Keep HTML.";
+            var input = MinimalEpubFactory.Create(root, source);
+            var glossary = await WriteGlossaryAsync(root);
+            var prefix = new TranslationPromptFactory(new GlossaryWriter()).Create(
+                new GlossaryParser().Parse(await File.ReadAllTextAsync(glossary)), style);
+            var estimatedInput = new LengthTokenEstimator().Estimate(prefix) + new LengthTokenEstimator().Estimate(source);
+            var options = new LlmOptions
+            {
+                Model = "test-model",
+                ContextWindowTokens = budgetMode == 2 ? estimatedInput + 501 : 1000000,
+                MaxInputTokens = budgetMode == 1 ? estimatedInput + 1 : null,
+                ReservedOutputTokens = 500
+            };
+            var requests = new List<LlmRequest>();
+            var llm = CreateMappingLlm(request =>
+            {
+                requests.Add(request);
+                return requests.Count == 1 ? Ok(source) : Ok("<p>Клинок двинулся.</p>");
+            });
+            var result = await CreateService(llm.Object, llmOptions: options,
+                styleRulesLoader: new StyleRulesLoader(Path.Combine(root, "no-prompts"))).RunAsync(
+                    Job(input, glossary, Path.Combine(root, "out.epub"), Path.Combine(root, "work")),
+                    CancellationToken.None);
+            Assert.False(result.HasFailures);
+            Assert.Equal(2, requests.Count);
+            Assert.Null(requests[0].ValidationFeedback);
+            Assert.Equal(requests[0].StablePrefix, requests[1].StablePrefix);
+            Assert.Equal(requests[0].VariableContent, requests[1].VariableContent);
+            if (budgetMode == 0)
+            {
+                Assert.NotNull(requests[1].ValidationFeedback);
+                Assert.Contains("English function word: The", requests[1].ValidationFeedback);
+                Assert.Contains("The blade moved", requests[1].ValidationFeedback);
+                Assert.Contains("entire original XHTML", requests[1].ValidationFeedback);
+                Assert.True(requests[1].ValidationFeedback!.Length <= 600);
+            }
+            else
+            {
+                Assert.Null(requests[1].ValidationFeedback);
+            }
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_IsolatedThe_AcceptsTranslationWithoutRetry()
+    {
+        var root = NewRoot();
+        try
+        {
+            var input = MinimalEpubFactory.Create(root, "<p>He saw The on a sign.</p>");
+            var glossary = await WriteGlossaryAsync(root);
+            var output = Path.Combine(root, "out.epub");
+            var llm = CreateMappingLlm(request =>
+            {
+                Assert.Null(request.ValidationFeedback);
+                return Ok("<p>Он увидел The на табличке.</p>");
+            });
+            var result = await CreateService(llm.Object).RunAsync(
+                Job(input, glossary, output, Path.Combine(root, "work")), CancellationToken.None);
+            Assert.False(result.HasFailures);
+            llm.Verify(x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+            Assert.Contains("The", Assert.Single((await new EpubBookService().OpenAsync(output, CancellationToken.None)).Chapters).PlainText);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_HttpRetry_DoesNotInventValidationFeedback()
+    {
+        var root = NewRoot();
+        try
+        {
+            var input = MinimalEpubFactory.Create(root, "<p>Original</p>");
+            var glossary = await WriteGlossaryAsync(root);
+            var calls = 0;
+            var llm = new Mock<ILlmProvider>(MockBehavior.Strict);
+            llm.Setup(x => x.CompleteAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()))
+                .Returns((LlmRequest request, CancellationToken _) =>
+                {
+                    Assert.Null(request.ValidationFeedback);
+                    calls++;
+                    return calls == 1
+                        ? Task.FromException<LlmResponse>(new LlmException("Gateway unavailable", true, 502))
+                        : Task.FromResult(Ok("<p>Перевод</p>"));
+                });
+            var result = await CreateService(llm.Object).RunAsync(
+                Job(input, glossary, Path.Combine(root, "out.epub"), Path.Combine(root, "work")), CancellationToken.None);
+            Assert.False(result.HasFailures);
+            Assert.Equal(2, calls);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
     private static BookTranslationService CreateService(
         ILlmProvider llm,
         int maxRetries = 3,
         StyleRulesLoader? styleRulesLoader = null,
         IRunProgress? progress = null,
-        int maxConcurrency = 2)
+        int maxConcurrency = 2,
+        LlmOptions? llmOptions = null)
     {
         return new BookTranslationService(
             new EpubBookService(),
@@ -1008,7 +1174,7 @@ public sealed class BookTranslationServiceTests
                 StyleRules = "Translate to Russian. Keep HTML.",
                 MaxConcurrency = maxConcurrency
             }),
-            Options.Create(new LlmOptions
+            Options.Create(llmOptions ?? new LlmOptions
             {
                 Model = "test-model",
                 ContextWindowTokens = 8000,

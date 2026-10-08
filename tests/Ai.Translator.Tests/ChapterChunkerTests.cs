@@ -86,6 +86,84 @@ public sealed class ChapterChunkerTests
         Assert.Equal(ChapterChunker.BudgetExceededMessage, ex.Message);
     }
 
+    [Theory]
+    [InlineData(0, 0, 85000)]
+    [InlineData(2, 0, 64000)]
+    [InlineData(2, 8192, 59904)]
+    public void Chunk_LargeInputAndIndependentOutput_PreservesBlocks(double multiplier, int reasoningReserve, int expectedBudget)
+    {
+        var fragments = Enumerable.Range(0, 10).Select(i => $"<p>{i}" + new string('x', 40000) + "</p>").ToArray();
+        var chapter = CreateChapter(fragments);
+        var estimator = new LengthTokenEstimator();
+        var profile = new ModelProfile
+        {
+            ContextWindowTokens = 1000000,
+            MaxInputTokens = 90000,
+            ReservedOutputTokens = 128000,
+            TranslationOutputTokenMultiplier = multiplier,
+            ReasoningTokenReserve = reasoningReserve
+        };
+        Assert.Equal(expectedBudget, profile.GetSourceBudget(5000));
+        var chunks = new ChapterChunker(estimator).Chunk(chapter, 5000, profile);
+        Assert.True(chunks.Count > 1);
+        Assert.Equal(chapter.BodyInnerHtml, string.Concat(chunks.Select(c => c.SourceHtml)));
+        foreach (var chunk in chunks)
+        {
+            Assert.True(estimator.Estimate(chunk.SourceHtml) <= expectedBudget);
+        }
+    }
+
+    [Fact]
+    public void Chunk_TwoHundredKilobyteChapter_FitsWithSeparateOutput()
+    {
+        var chapter = CreateChapter("<p>" + new string('x', 200000) + "</p>");
+        var profile = new ModelProfile
+        {
+            ContextWindowTokens = 1000000,
+            MaxInputTokens = 90000,
+            ReservedOutputTokens = 128000,
+            TranslationOutputTokenMultiplier = 2,
+            ReasoningTokenReserve = 8192
+        };
+        Assert.Equal(chapter.BodyInnerHtml, Assert.Single(new ChapterChunker(new LengthTokenEstimator()).Chunk(chapter, 5000, profile)).SourceHtml);
+    }
+
+    [Fact]
+    public void Chunk_FullContextStillLimitsInputAndOutput()
+    {
+        var profile = new ModelProfile { ContextWindowTokens = 100000, MaxInputTokens = 90000, ReservedOutputTokens = 30000 };
+        Assert.Equal(65000, profile.GetSourceBudget(5000));
+    }
+
+    [Fact]
+    public void Chunk_SubTokenFragments_DoesNotUnderestimateCombinedHtml()
+    {
+        var chapter = CreateChapter("xxx", "xxx", "xxx", "xxx", "xxx", "xxx");
+        var profile = new ModelProfile { ContextWindowTokens = 5, ReservedOutputTokens = 3, MaxInputTokens = 5 };
+        var chunks = new ChapterChunker(new LengthTokenEstimator()).Chunk(chapter, 0, profile);
+        Assert.True(chunks.Count > 1);
+        Assert.All(chunks, chunk => Assert.True(new LengthTokenEstimator().Estimate(chunk.SourceHtml) <= 2));
+        Assert.Equal(chapter.BodyInnerHtml, string.Concat(chunks.Select(c => c.SourceHtml)));
+    }
+
+    [Theory]
+    [InlineData(0, 0, 1, 0)]
+    [InlineData(10, 0, 1, 0)]
+    [InlineData(10, 1, -1, 0)]
+    [InlineData(10, 1, 1, 1)]
+    [InlineData(10, 1, 1, -1)]
+    public void Chunk_InvalidTokenBudgets_Throws(int context, int output, double multiplier, int reasoningReserve)
+    {
+        var profile = new ModelProfile
+        {
+            ContextWindowTokens = context,
+            ReservedOutputTokens = output,
+            TranslationOutputTokenMultiplier = multiplier,
+            ReasoningTokenReserve = reasoningReserve
+        };
+        Assert.Throws<InvalidOperationException>(() => new ChapterChunker(new LengthTokenEstimator()).Chunk(CreateChapter("<p>text</p>"), 0, profile));
+    }
+
     private static EpubChapter CreateChapter(params string[] fragments)
     {
         var body = string.Concat(fragments);

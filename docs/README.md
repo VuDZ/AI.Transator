@@ -47,6 +47,10 @@
 | [epochs/12-protocol-english.md](epochs/12-protocol-english.md) | валидатор: протокол не считать недопереводом, в Reason — слово |
 | [epochs/13-translate-concurrency.md](epochs/13-translate-concurrency.md) | translate: несколько чанков в модель сразу, `--concurrency` |
 
+Эпоха [14 — Большие запросы OpenRouter](epochs/14-openrouter-large-requests.md): отдельный предел входа, расширение русского ответа, SSE, reasoning и TTL кеша.
+
+Эпоха [15 — Проверка английского и полезные повторы](epochs/15-translation-validation.md): одиночное слово — предупреждение, английская фраза — ошибка с контекстом, feedback при повторе.
+
 ## Шаблон эпохи
 
 Каждый epoch-файл отвечает на одно и то же:
