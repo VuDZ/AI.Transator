@@ -16,3 +16,4 @@ appsettings.*.local.json
 *.nupkg
 TestResults/
 artifacts/
+/books/
